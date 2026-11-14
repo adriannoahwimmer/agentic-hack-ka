@@ -259,10 +259,10 @@ _noch leer_
 - Agent und Modell: `GEMINI_MODEL_QUEST`, Tools `lookup_place(place_id, reason)` und `assign_quest(place_id, title, objective, enemies, npc_line, reason)`; `place_id` ist ein Enum der `mission`-POIs, falsche IDs kommen als `{"error": ...}` zurück und das Modell wählt neu. `assign_quest` beendet den Loop (typisch 2 Requests, höchstens `QUEST_MAX_STEPS`). Pro Request `AGENT_DEADLINE_MS`, gesamt `QUEST_DEADLINE_MS` (`asyncio.wait_for`), `use_fallback_model=False`. Gedächtnis: letzte 6 Sätze pro NPC (im Prozess).
 - Offene Punkte:
   - Spieler kann noch keinen freien Text eingeben (erstes Gespräch „Got any work for me?“, danach leer).
-  - Live-Lauf steht aus (Q0: 429 auf `gemini-3.5-flash-lite`, siehe `agent_docs/gemini_api.md`).
+  - Live-Lauf steht aus. Der Q0-429 betraf nur `google_maps` (auf dem Projekt gesperrt), normale Calls laufen (`agent_docs/gemini_api.md`).
 
 ### Maps-Fakten (Scheibe Quest)
-- **Gestrichen** (2026-11-14, Kürzung 2). Der Q0-Live-Check (1 Request, `gemini-3.5-flash-lite` mit `google_maps`) lieferte 429 „quota exceeded“; 429 wird nie wiederholt.
+- **Gestrichen** (2026-11-14, Kürzung 2). Der Q0-Live-Check (1 Request, `gemini-3.5-flash-lite` mit `google_maps`) lieferte 429 „quota exceeded“; 429 wird nie wiederholt. Ursache: Maps Grounding ist auf dem Projekt gesperrt (nur das Tool `google_maps`, kein Spend-Cap).
 - Stattdessen liefert `lookup_place` die `description` aus `data/pois.json`. `sources` in `/npc/talk` bleibt leer, die Quellenzeile im Dialog (`hud.showDialog`) ist vorbereitet und erscheint, sobald `sources` gefüllt ist.
 - Kein `maps_facts.py`, kein `scripts/prewarm.py`; `MAPS_CACHE_PATH` und `GEMINI_MODEL_MAPS` bleiben in `config.py` (Vertrag nur additiv).
 

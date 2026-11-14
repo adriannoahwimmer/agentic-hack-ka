@@ -111,7 +111,7 @@ Je genau 1 Request über `gemini.generate` (`attempts=1`, ohne Fallback-Modell),
 
 - Folge: Beide Kürzungen gezogen (Design.md, „Maps-Fakten“ und „Polizeifunk-TTS“). Funk spricht der Browser (`speechSynthesis`), `lookup_place` nutzt die POI-Beschreibung.
 - TTS-Vermutung (nicht geprüft): `speechConfig` gibt es in `generation_config` nur unter `v1beta` oder TTS läuft nur über die Interactions API. Ein zweiter Versuch hätte das Request-Budget der Scheibe überschritten.
-- **429 prüfen:** Ob das ein Maps-eigenes Kontingent oder das Spend-Cap des Projekts ist, ist offen. Ist es das Spend-Cap, betrifft es auch Polizei und Quest-NPC im Live-Modus (dann greifen nur die Fallbacks). Vor dem Live-Demo-Lauf unter aistudio.google.com/spend nachsehen.
+- **429 geklärt (2026-11-14):** Der 429 betraf nur das Tool `google_maps`. Maps Grounding ist auf dem Projekt gesperrt. Es war kein Spend-Cap, normale Calls (Polizei, Quest-NPC) laufen. Ein 429 mit `google_maps` heißt hier also nicht „Budget leer“.
 
 ## Decisions API (`gemini-decision-1`)
 Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem Hackathon-Key und google-genai 3.3.0.

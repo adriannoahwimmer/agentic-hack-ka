@@ -39,8 +39,10 @@ Push-Location $wt
 try {
     python -m venv .venv
     & .\.venv\Scripts\python.exe -m pip install -q --upgrade pip
-    if (Test-Path requirements.txt)   { & .\.venv\Scripts\python.exe -m pip install -q -r requirements.txt }
-    elseif (Test-Path pyproject.toml) { & .\.venv\Scripts\python.exe -m pip install -q -e . }
+    # requirements-dev.txt = requirements.txt + ruff/pytest/httpx; ohne sie scheitert check.ps1 (Stop-Hook).
+    if (Test-Path requirements-dev.txt) { & .\.venv\Scripts\python.exe -m pip install -q -r requirements-dev.txt }
+    elseif (Test-Path requirements.txt) { & .\.venv\Scripts\python.exe -m pip install -q -r requirements.txt }
+    elseif (Test-Path pyproject.toml)   { & .\.venv\Scripts\python.exe -m pip install -q -e . }
 
     # 5. Frontend
     if (Test-Path frontend\package.json) {

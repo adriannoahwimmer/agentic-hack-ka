@@ -55,8 +55,11 @@ GEMINI_THINKING_LEVEL = _env("GEMINI_THINKING_LEVEL", "low")
 MAX_AGENT_STEPS = max(1, _env_number("MAX_AGENT_STEPS", 8))  # Requests pro /agent
 
 # --- Timeouts ----------------------------------------------------------------
-# Pro Request. Flash-Lite antwortet in 0,5 bis 6 s; Hydrogen und Carbon brauchen mehr.
-GEMINI_TIMEOUT_MS = _env_number("GEMINI_TIMEOUT_MS", 30_000)
+# Pro Request, gilt für Agent- und Fallback-Modell. Messung vom 2026-11-14
+# (Polizei-Function-Call): 3.5-flash-lite p90 0,86 s, 3.1-flash-lite bis 12,5 s.
+# 15 s deckt den Fallback ab und halbiert die Wartezeit bei hängendem Primärmodell.
+# Hydrogen und Carbon brauchen deutlich mehr.
+GEMINI_TIMEOUT_MS = _env_number("GEMINI_TIMEOUT_MS", 15_000)
 # SDK-Versuche bei Transportfehlern (Timeout, Verbindungsabbruch, 408), inkl. des ersten
 GEMINI_TRANSPORT_ATTEMPTS = max(1, _env_number("GEMINI_TRANSPORT_ATTEMPTS", 2))
 

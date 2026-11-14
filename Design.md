@@ -91,11 +91,17 @@ _noch leer_
   - `GEMINI_MODEL_AGENT` und `GEMINI_MODEL_CHAT`: beide `gemini-3.5-flash-lite` (schnellstes Modell der Latenz-Messung vom 2026-11-14)
   - `GEMINI_MODEL_FALLBACK`: `gemini-3.1-flash-lite` (zweitschnellstes)
   - `GEMINI_THINKING_LEVEL`: `low`
-  - Limits: `MAX_AGENT_STEPS`, `GEMINI_TIMEOUT_MS`, `GEMINI_RETRY_*`
+  - Limits: `MAX_AGENT_STEPS`, `GEMINI_TIMEOUT_MS` (15 s, deckt den langsamen Fallback ab), `GEMINI_RETRY_*`
   - Details in `agent_docs/gemini_api.md`
+- Aufruf aus dem Spiel (Messung vom 2026-11-14 mit Polizei-Function-Call, Agent p90 0,86 s):
+  - Die Latenz ist kein Engpass. Allein von ihr her ginge ein Debounce von 1,5 s. Verbindlich sind die Budget-Werte aus dem Plan: `AGENT_DEBOUNCE_S` ≥ 5 s, `POLICE_MIN_INTERVAL_S` 8 s.
+  - `AGENT_DEADLINE_MS` 6 s reicht dem Agent-Modell. Das Fallback-Modell (5 bis 12,5 s) schafft das meist nicht. Dann greift der geskriptete Fallback.
+  - Pro Agent höchstens ein Request gleichzeitig. Neue Snapshots währenddessen zusammenfassen, der neueste zählt.
+  - Mengen (z. B. fehlende Einheiten) rechnet das Spiel und schickt sie im Snapshot mit oder begrenzt sie im Clamp. Das Modell lag dabei in 3 von 5 Calls daneben.
 - Offene Punkte:
   - Hydrogen war beim Smoke-Test am 2026-11-14 sehr langsam (30 bis 90 s pro Schritt). Deshalb ist Flash-Lite Default. Hydrogen oder Carbon nur per Env und mit höherem Timeout.
   - Der Fallback mitten im Tool-Loop (3.5-flash-lite-Signatures an 3.1-flash-lite) ist nicht live getestet.
   - `gemini-3.1-flash-lite` lieferte in der Messung 2 von 6 Mal 503. Als Fallback reicht das, als Primärmodell nicht.
+  - Mit Polizei-Function-Call braucht `gemini-3.1-flash-lite` 5 bis 12,5 s (1 von 5 Calls: 504). Antwortet der Fallback, sollte das Spiel deshalb lokal nach den festen Fahndungsregeln reagieren.
   - Die Decisions API (`gemini-decision-1`) funktioniert mit dem Key. Für geschlossene Agent-Entscheidungen ist sie ein Kandidat, eingebaut ist sie noch nicht (`agent_docs/gemini_api.md`).
   - GenAI-Calls werden noch nicht als JSON Lines geloggt (Querschnittsregel, Quelle für das Agent-Log-Overlay).

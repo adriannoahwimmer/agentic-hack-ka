@@ -83,9 +83,10 @@ extras.wanted.units_by_type. Call spawn_units once per unit_type with count = un
 - Tactics: chase (pursue), roadblock (block the road ahead), surround (encircle). \
 near_place_id must be an id from places, or omit it.
 - extras.player_radio is the suspect talking to you on the radio. ALWAYS answer with \
-radio_message addressed to the suspect (short, German). plead: you may lower the level by 1 \
+radio_message addressed to the suspect (short, German) that reacts to the taunt or excuse itself. plead: you may lower the level by 1 \
 only if extras.wanted.crime_s_ago > 20 and never below floor, else refuse. taunt: you may \
 raise the level by 1 and add units (taunt at level 4 allows 5).
+- Only mention crimes that appear in recent_events; if there are none, do not invent any (no shots, no theft), just react to what the suspect said.
 - radio_message: one short German police radio call (Polizeifunk jargon, max 15 words), \
 e.g. "Alle Streifen: Schüsse am Marktplatz, Täter bewaffnet, Eigensicherung beachten." \
 Name the real Karlsruhe place from places (suspect's zone or near_place_id) by its German \

@@ -4,8 +4,11 @@ Zweck: Feature-Modul der Scheibe Polizei (Design.md, "Spielzustand"). Hält, was
 Server über das Spiel weiß, setzt den Regel-Boden der Fahndung und baut die
 Agent-Snapshots (protocol.AgentSnapshot).
 Use-Cases:
-- Verbrechen (shot_fired, npc_killed, vehicle_stolen) heben Level 0 sofort auf 1 (rules)
-- Decay: nach WANTED_DECAY_S ohne Verbrechen sinkt das Level um 1
+- Regel-Boden (floor, max 4): Schuss min 1, Fahrzeug +1 (min 1), Zivilist min 2 (+1 je
+  weiterem in 60 s), Polizist getroffen min 3, getötet min 4; liegt der Boden über dem
+  Level, hebt der Server sofort an (source rules)
+- Decay: nach WANTED_DECAY_S ohne Delikt (und ohne Einheit < 40 m, falls bekannt) sinkt
+  das Level um 1, der Boden sinkt mit
 - Einheitenbilanz: spawn_units minus getötete Polizisten, bei Level 0 ist sie 0
 - snapshot(agent, memory) für den Polizei-Dispatcher, Snapshot-Provider "wanted"
 - Reload im Browser: on_connect schickt das aktuelle set_wanted_level
@@ -38,7 +41,12 @@ CRIME_LABELS = {
     "shot_fired": "Shots fired",
     "npc_killed": "Person killed",
     "vehicle_stolen": "Vehicle theft",
+    "police_hit": "Officer hit",
+    "police_killed": "Officer killed",
 }
+FLOOR_MAX = 4  # 5 Sterne nur durch den Agenten bei anhaltender Eskalation
+CIVILIAN_WINDOW_S = 60.0
+UNIT_NEAR_M = 40.0  # Einheit näher als das blockiert den Decay
 COUNTED_TYPES = ("shot_fired", "npc_killed", "vehicle_stolen")
 # Tote dieser Arten heben die Fahndung nicht selbst (die Schüsse davor tun es).
 NON_CRIME_KILLS = ("gang", "quest_target")
@@ -79,6 +87,12 @@ class GameState:
         self.last_crime: float | None = None
         self.last_decay: float | None = None
         self.units_active = 0
+        self.units_by_type: dict[str, int] = {}
+        self.floor_level = 0
+        self.police_kills = 0
+        self.civilian_kills: deque[float] = deque(maxlen=EVENT_BUFFER_MAX)
+        # Abstand der nächsten Einheit zum Spieler in m; None = unbekannt (nur Zeitregel)
+        self.nearest_unit_m: float | None = None
         self.player: protocol.PlayerPosition | None = None
         self.zone_id: str | None = None
         self.events: deque[tuple[float, str, str | None, dict[str, Any]]] = deque(
@@ -110,28 +124,68 @@ class GameState:
         self.events.append((now, env.type, zone, _event_detail(event)))
         self._prune(now)
         if isinstance(event, protocol.NpcKilled) and event.npc_kind == "police":
-            self.units_active = max(0, self.units_active - 1)
+            self._unit_lost("patrol")
+        if isinstance(event, protocol.PoliceKilled):
+            self._unit_lost("foot")
         if self.is_crime(event):
+            self.raise_floor(event, now)
             await self.record_crime(env.type)
+
+    def _unit_lost(self, unit_type: str) -> None:
+        """Eine Einheit weniger (bevorzugt vom genannten Typ)."""
+        self.units_active = max(0, self.units_active - 1)
+        key = unit_type if self.units_by_type.get(unit_type) else None
+        key = key or next((k for k, v in self.units_by_type.items() if v > 0), None)
+        if key is not None:
+            self.units_by_type[key] -= 1
 
     @staticmethod
     def is_crime(event: BaseModel) -> bool:
         """True für Events, die den Regel-Boden auslösen."""
         if isinstance(event, protocol.NpcKilled):
             return event.npc_kind not in NON_CRIME_KILLS
-        return isinstance(event, protocol.ShotFired | protocol.VehicleStolen)
+        return isinstance(
+            event,
+            protocol.ShotFired
+            | protocol.VehicleStolen
+            | protocol.PoliceHit
+            | protocol.PoliceKilled,
+        )
+
+    def raise_floor(self, event: BaseModel, now: float) -> int:
+        """Regel-Boden nach Design.md ("Wanted-Regeln") anheben, höchstens FLOOR_MAX."""
+        floor = self.floor_level
+        base = max(floor, self.wanted_level)
+        if isinstance(event, protocol.ShotFired):
+            floor = max(floor, 1)
+        elif isinstance(event, protocol.VehicleStolen):
+            floor = max(floor, base + 1, 1)
+        elif isinstance(event, protocol.PoliceHit):
+            floor = max(floor, 3)
+        elif isinstance(event, protocol.PoliceKilled):
+            self.police_kills += 1
+            floor = max(floor, 4)
+        elif isinstance(event, protocol.NpcKilled) and event.npc_kind == "police":
+            floor = max(floor, 4)
+        elif isinstance(event, protocol.NpcKilled):  # Zivilist
+            recent = [t for t in self.civilian_kills if now - t <= CIVILIAN_WINDOW_S]
+            floor = max(floor, 2) if not recent else max(floor, base + 1)
+            self.civilian_kills.append(now)
+        self.floor_level = min(FLOOR_MAX, floor)
+        return self.floor_level
 
     async def record_crime(self, event_type: str) -> None:
-        """Verbrechen merken; bei Level 0 sofort Level 1 setzen (source rules)."""
+        """Delikt merken; liegt der Boden über dem Level, sofort anheben (source rules)."""
         self.last_crime = self.clock()
-        if self.wanted_level == 0 and self.hub is not None:
+        target = max(1, self.floor_level)
+        if self.wanted_level < target and self.hub is not None:
             label = CRIME_LABELS.get(event_type, "Crime reported")
             await self.hub.send_action(
                 "set_wanted_level",
                 {
-                    "level": 1,
+                    "level": target,
                     "source": "rules",
-                    "reason": f"{label}, wanted level raised",
+                    "reason": f"{label}, wanted level raised to floor {target}",
                 },
             )
 
@@ -146,6 +200,10 @@ class GameState:
         self.wanted_level = model.level
         if model.level == 0:
             self.units_active = 0
+            self.units_by_type = {}
+            self.floor_level = 0
+            self.police_kills = 0
+            self.civilian_kills.clear()
 
     def on_spawn_action(self, model: protocol.SpawnUnits, env: Envelope) -> None:
         """Beobachter: gespawnte Polizei-Einheiten zählen."""
@@ -153,13 +211,14 @@ class GameState:
             self.units_active = min(
                 config.POLICE_MAX_UNITS, self.units_active + model.count
             )
+            self.units_by_type[model.unit_type] = (
+                self.units_by_type.get(model.unit_type, 0) + model.count
+            )
 
     # ---------------------------------------------------------------- Abfragen
     def floor(self) -> int:
-        """Regel-Boden: 1, solange das letzte Verbrechen < WANTED_DECAY_S her ist, sonst 0."""
-        if self.last_crime is None:
-            return 0
-        return 1 if self.clock() - self.last_crime < config.WANTED_DECAY_S else 0
+        """Regel-Boden (0..FLOOR_MAX). Steigt mit Delikten, sinkt mit dem Decay."""
+        return self.floor_level
 
     def counts(self, window_s: float = 60.0) -> dict[str, int]:
         """Anzahl der Verbrechens-Events je Typ in den letzten window_s Sekunden."""
@@ -181,7 +240,13 @@ class GameState:
             if self.last_crime is None
             else round(self.clock() - self.last_crime, 1)
         )
-        return {"level": self.wanted_level, "floor": self.floor(), "crime_s_ago": since}
+        return {
+            "level": self.wanted_level,
+            "floor": self.floor(),
+            "crime_s_ago": since,
+            "police_kills": self.police_kills,
+            "units_by_type": {k: v for k, v in self.units_by_type.items() if v > 0},
+        }
 
     def snapshot(self, agent: str, memory: list[str] | None = None) -> AgentSnapshot:
         """Kompakter Lagebericht für einen Agenten (Ziel < 2 KB)."""
@@ -242,7 +307,11 @@ class GameState:
 
     # ---------------------------------------------------------------- Decay
     async def decay_tick(self) -> bool:
-        """Einmal prüfen: WANTED_DECAY_S ohne Verbrechen (und seit dem letzten Decay) -> -1."""
+        """Einmal prüfen: WANTED_DECAY_S ohne Delikt (und seit dem letzten Decay) -> -1.
+
+        Blockiert, solange eine Einheit < UNIT_NEAR_M am Spieler ist (nur wenn bekannt).
+        Senkt den Regel-Boden mit.
+        """
         if self.wanted_level <= 0 or self.hub is None:
             return False
         now = self.clock()
@@ -255,8 +324,11 @@ class GameState:
             return False
         if now - ref < config.WANTED_DECAY_S:
             return False
+        if self.nearest_unit_m is not None and self.nearest_unit_m < UNIT_NEAR_M:
+            return False  # Polizei klebt am Spieler: kein Abklingen
         self.last_decay = now
         level = self.wanted_level - 1
+        self.floor_level = max(0, min(self.floor_level - 1, level))
         await self.hub.send_action(
             "set_wanted_level",
             {

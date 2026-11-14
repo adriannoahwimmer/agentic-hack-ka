@@ -8,6 +8,10 @@ Use-Cases:
 - Schießerei -> der Agent eskaliert die Fahndung, schickt Einheiten an echte Orte, funkt
 - Gemini nicht erreichbar, zu langsam oder AGENTS_MODE=offline -> deterministischer Fallback
 - Clamps schützen das Spiel vor unsinnigen Modellwerten (Level-Sprünge, zu viele Einheiten)
+- Level nur in [Boden, Boden+1]; 5 Sterne nur bei >= 2 getöteten Polizisten oder Taunt bei 4
+- Einheiten je Stufe nach UNIT_TABLE (foot, patrol, tank; swat zählt wie patrol)
+- player_radio (plead/taunt) löst sofort einen Zyklus aus (Cooldown POLICE_RADIO_COOLDOWN_S),
+  der Dispatcher antwortet immer per radio_message
 
 Entwürfe (decide/fallback) sind Envelopes mit Roh-Argumenten; erst clamp() baut daraus
 gültige Vertrags-Payloads (spawn_units.count = target_units - units_active).
@@ -16,6 +20,7 @@ gültige Vertrags-Payloads (spawn_units.count = target_units - units_active).
 import asyncio
 import itertools
 import logging
+import time
 from collections import deque
 from datetime import datetime, timezone
 from typing import Any
@@ -33,8 +38,31 @@ from protocol import AgentSnapshot, Envelope
 log = logging.getLogger(__name__)
 
 AGENT = "police"
-TRIGGERS = {"shot_fired", "npc_killed", "vehicle_stolen", "zone_entered"}
-POLICE_UNIT_TYPES = ("patrol", "swat")
+TRIGGERS = {
+    "shot_fired",
+    "npc_killed",
+    "vehicle_stolen",
+    "zone_entered",
+    "police_hit",
+    "police_killed",
+}
+POLICE_UNIT_TYPES = ("foot", "patrol", "swat", "tank")
+# Kontingent je Fahndungsstufe (gesamt max. 6). swat zählt wie patrol.
+UNIT_TABLE: dict[int, dict[str, int]] = {
+    0: {},
+    1: {"foot": 1},
+    2: {"foot": 1, "patrol": 1},
+    3: {"foot": 2, "patrol": 2},
+    4: {"foot": 2, "patrol": 4},
+    5: {"foot": 2, "patrol": 3, "tank": 1},
+}
+FLOOR_MAX = 4  # Boden aus game_state, 5 nur durch den Agenten
+PLEAD_MIN_CRIME_S = 20.0  # plead senkt nur, wenn das letzte Delikt länger her ist
+RADIO_REPLY = {
+    "plead": "Leitstelle an Täter: Abgelehnt. Bleiben Sie stehen, Hände sichtbar.",
+    "plead_ok": "Leitstelle an Täter: Verstanden. Stehen bleiben, wir fahren runter.",
+    "taunt": "Leitstelle an Täter: Große Worte. Weitere Streifen sind unterwegs.",
+}
 TACTICS = ("chase", "roadblock", "surround")
 TOOL_ORDER = ("set_wanted_level", "spawn_units", "radio_message")
 
@@ -45,9 +73,19 @@ You only set parameters through your tools; the game drives the cars itself.
 Rules:
 - wanted_level 0-5. Shots and casualties justify escalation; one dead civilian is \
 level 2-3, several deaths or killed officers level 4-5. Never change by more than 2 at once.
-- spawn_units.target_units is the total number of active units you want (max units_max). \
-Use patrol up to level 3, swat from level 4. Tactics: chase (pursue), roadblock (block \
-the road ahead), surround (encircle). near_place_id must be an id from places, or omit it.
+- extras.wanted.floor is the rule floor. You may only set level floor or floor+1 \
+(never below floor). Level 5 only for sustained escalation: police_kills >= 2, or a \
+taunt at level 4. Explain the level in reason.
+- Units per level (total, by unit_type; foot = officer on foot, patrol = squad car, \
+tank = armoured vehicle): 1: 1 foot. 2: 1 foot + 1 patrol. 3: 2 foot + 2 patrol. \
+4: 2 foot + 4 patrol. 5: 2 foot + 3 patrol + 1 tank. Active units are in \
+extras.wanted.units_by_type. Call spawn_units once per unit_type with count = units to add.
+- Tactics: chase (pursue), roadblock (block the road ahead), surround (encircle). \
+near_place_id must be an id from places, or omit it.
+- extras.player_radio is the suspect talking to you on the radio. ALWAYS answer with \
+radio_message addressed to the suspect (short, German). plead: you may lower the level by 1 \
+only if extras.wanted.crime_s_ago > 20 and never below floor, else refuse. taunt: you may \
+raise the level by 1 and add units (taunt at level 4 allows 5).
 - radio_message: one short German police radio call (Polizeifunk jargon, max 15 words), \
 e.g. "Alle Streifen: Schüsse am Marktplatz, Täter bewaffnet, Eigensicherung beachten." \
 Name the real Karlsruhe place from places (suspect's zone or near_place_id) by its German \
@@ -72,11 +110,11 @@ TOOLS = types.Tool(
         ),
         types.FunctionDeclaration(
             name="spawn_units",
-            description="Request police units. target_units is the desired TOTAL of active units.",
+            description="Request police units of one unit_type. count = units to add.",
             parameters_json_schema={
                 "type": "object",
                 "properties": {
-                    "target_units": {"type": "integer", "minimum": 1, "maximum": 6},
+                    "count": {"type": "integer", "minimum": 1, "maximum": 6},
                     "unit_type": {"type": "string", "enum": list(POLICE_UNIT_TYPES)},
                     "tactic": {"type": "string", "enum": list(TACTICS)},
                     "near_place_id": {
@@ -85,7 +123,7 @@ TOOLS = types.Tool(
                     },
                     "reason": {"type": "string", "description": "One sentence why."},
                 },
-                "required": ["target_units", "unit_type", "tactic", "reason"],
+                "required": ["count", "unit_type", "tactic", "reason"],
             },
         ),
         types.FunctionDeclaration(
@@ -126,6 +164,10 @@ RADIO_TEMPLATES = (
 )
 
 MEMORY: deque[str] = deque(maxlen=5)
+# Offener Funkspruch des Spielers für den nächsten Zyklus ({"tone", "text"}) und Cooldown
+PENDING_RADIO: dict[str, Any] = {}
+_radio_state: dict[str, float | None] = {"last": None}
+RADIO_TASKS: set[asyncio.Task] = set()
 _waves = itertools.count(1)
 _templates = itertools.count(0)
 
@@ -145,6 +187,43 @@ def _floor(snapshot: AgentSnapshot) -> int:
         return int(wanted.get("floor", 0))
     except (TypeError, ValueError):
         return 0
+
+
+def _wanted(snapshot: AgentSnapshot) -> dict[str, Any]:
+    """extras.wanted aus dem Snapshot (game_state), sonst leer."""
+    wanted = snapshot.extras.get("wanted")
+    return wanted if isinstance(wanted, dict) else {}
+
+
+def _player_radio(snapshot: AgentSnapshot) -> dict[str, Any] | None:
+    """Offener Funkspruch des Spielers aus extras.player_radio, sonst None."""
+    radio = snapshot.extras.get("player_radio")
+    return radio if isinstance(radio, dict) and radio.get("tone") else None
+
+
+def level_cap(snapshot: AgentSnapshot) -> int:
+    """Höchstes erlaubtes Level: Boden+1, 5 nur bei >= 2 toten Polizisten oder Taunt bei 4."""
+    floor = _floor(snapshot)
+    radio = _player_radio(snapshot) or {}
+    kills = _int(_wanted(snapshot).get("police_kills")) or 0
+    escalation = kills >= 2 or (
+        radio.get("tone") == "taunt" and snapshot.wanted_level >= FLOOR_MAX
+    )
+    top = config.WANTED_MAX if escalation else min(config.WANTED_MAX, FLOOR_MAX)
+    return max(floor, min(top, floor + 1))
+
+
+def unit_quota(level: int, unit_type: str, snapshot: AgentSnapshot) -> int:
+    """Wie viele Einheiten dieses Typs noch dazukommen dürfen (UNIT_TABLE minus aktive)."""
+    kind = "patrol" if unit_type == "swat" else unit_type
+    table = UNIT_TABLE.get(max(0, min(level, max(UNIT_TABLE))), {})
+    active = _wanted(snapshot).get("units_by_type") or {}
+    if kind == "patrol":
+        used = (_int(active.get("patrol")) or 0) + (_int(active.get("swat")) or 0)
+    else:
+        used = _int(active.get(kind)) or 0
+    room = config.POLICE_MAX_UNITS - snapshot.units_active
+    return max(0, min(table.get(kind, 0) - used, room))
 
 
 def _place_name(snapshot: AgentSnapshot, place_id: str | None) -> str | None:
@@ -186,74 +265,95 @@ async def decide(snapshot: AgentSnapshot) -> list[Envelope]:
 def fallback(snapshot: AgentSnapshot) -> list[Envelope]:
     """Deterministische Entscheidung ohne LLM: Level, Einheiten bis Level, Funk aus Vorlage.
 
-    Level = min(5, Boden + Tote der letzten 60 s), aber nie unter dem aktuellen Level
-    (Deeskalation macht der Decay in game_state).
+    Level = max(aktuelles Level, Boden), bei Taunt +1 (bis level_cap). Einheiten je
+    unit_type nach UNIT_TABLE. Auf plead: kein Effekt, Standardantwort (Deeskalation macht
+    der Decay in game_state).
     """
     floor = _floor(snapshot)
-    deaths = snapshot.counts_60s.get("npc_killed", 0)
-    level = max(snapshot.wanted_level, min(config.WANTED_MAX, floor + deaths))
-    # Schrittgrenze schon hier, damit Einheiten und Taktik zum gesendeten Level passen
-    level = min(level, snapshot.wanted_level + config.WANTED_MAX_STEP)
-    if level <= 0:
+    radio = _player_radio(snapshot)
+    level = max(snapshot.wanted_level, floor)
+    if radio and radio.get("tone") == "taunt":
+        level += 1
+    level = min(level, level_cap(snapshot) if radio else max(level, floor))
+    if level <= 0 and not radio:
         return []
     zone = snapshot.player.zone_id if snapshot.player else None
     place = _place_name(snapshot, zone) or "Innenstadt Karlsruhe"
     tactic = "chase" if level <= 2 else ("roadblock" if level == 3 else "surround")
     template = RADIO_TEMPLATES[next(_templates) % len(RADIO_TEMPLATES)]
-    return [
+    drafts = [
         _draft(
             "set_wanted_level",
             {
                 "level": level,
                 "source": "fallback",
-                "reason": f"{deaths} casualties in 60 s, floor {floor}",
+                "reason": f"Rule floor {floor}, units per wanted table",
             },
-        ),
-        _draft(
-            "spawn_units",
-            {
-                "target_units": level,
-                "unit_type": "swat" if level >= 4 else "patrol",
-                "tactic": tactic,
-                "near_place_id": zone,
-                "reason": f"Units up to wanted level {level}",
-            },
-        ),
-        _draft(
-            "radio_message",
-            {
-                "text": template.format(place=place, level=level, units=level),
-                "reason": "Scripted dispatch call",
-            },
-        ),
+        )
     ]
+    for unit_type, n in UNIT_TABLE.get(min(level, max(UNIT_TABLE)), {}).items():
+        drafts.append(
+            _draft(
+                "spawn_units",
+                {
+                    "count": n,
+                    "unit_type": unit_type,
+                    "tactic": tactic,
+                    "near_place_id": zone,
+                    "reason": f"Units for wanted level {level}",
+                },
+            )
+        )
+    text = (
+        RADIO_REPLY["taunt" if radio["tone"] == "taunt" else "plead"]
+        if radio
+        else template.format(place=place, level=level, units=level)
+    )
+    drafts.append(
+        _draft("radio_message", {"text": text, "reason": "Scripted dispatch call"})
+    )
+    return drafts
 
 
 def clamp(drafts: list[Envelope], snapshot: AgentSnapshot) -> list[Envelope]:
     """Entwürfe in gültige Aktionen verwandeln (Regeln in Design.md, "Polizei-Dispatcher").
 
-    - pro Tool höchstens ein Call, unbekannte Tools ignorieren
-    - Level in [Boden, WANTED_MAX], höchstens ±WANTED_MAX_STEP pro Zyklus, unverändert -> weg
-    - count = min(target_units, POLICE_MAX_UNITS) - units_active, ≤ 0 -> weg
+    - set_wanted_level/radio_message: höchstens ein Call; spawn_units: einer je unit_type
+    - Level in [Boden, level_cap], höchstens ±WANTED_MAX_STEP pro Zyklus, unverändert -> weg
+    - Senkung nur auf plead: um 1, letztes Delikt > PLEAD_MIN_CRIME_S her, nie unter Boden
+    - count je unit_type höchstens UNIT_TABLE[Level] minus aktive Einheiten dieses Typs
     - ungültige Enums -> patrol/chase, unbekannte near_place_id -> None
-    - Funktext getrimmt auf RADIO_MAX_CHARS, leer -> weg
+    - Funktext getrimmt auf RADIO_MAX_CHARS, leer -> weg; auf player_radio immer eine Antwort
     """
     first: dict[str, dict[str, Any]] = {}
+    spawns: list[dict[str, Any]] = []
     for draft in drafts:
-        if draft.type in TOOL_ORDER and draft.type not in first:
+        if draft.type == "spawn_units":
+            spawns.append(draft.payload)
+        elif draft.type in TOOL_ORDER and draft.type not in first:
             first[draft.type] = draft.payload
     out: list[Envelope] = []
     current = snapshot.wanted_level
     level_after = current
+    radio_in = _player_radio(snapshot)
+    wanted = _wanted(snapshot)
 
     args = first.get("set_wanted_level")
     if args is not None:
         level = _int(args.get("level"))
         if level is not None:
             floor = _floor(snapshot)
-            level = max(floor, min(config.WANTED_MAX, level))
+            level = max(floor, min(level_cap(snapshot), level))
             low = max(0, current - config.WANTED_MAX_STEP)
             level = max(floor, min(current + config.WANTED_MAX_STEP, max(low, level)))
+            if level < current:
+                since = wanted.get("crime_s_ago")
+                plead_ok = (
+                    radio_in is not None
+                    and radio_in.get("tone") == "plead"
+                    and (since is None or float(since) > PLEAD_MIN_CRIME_S)
+                )
+                level = max(level, current - 1) if plead_ok else current
             if level != current:
                 level_after = level
                 source = (
@@ -274,36 +374,51 @@ def clamp(drafts: list[Envelope], snapshot: AgentSnapshot) -> list[Envelope]:
                     )
                 )
 
-    args = first.get("spawn_units")
-    if args is not None and level_after > 0:
-        target = _int(args.get("target_units")) or 0
-        count = min(target, config.POLICE_MAX_UNITS) - snapshot.units_active
-        if count > 0:
-            unit_type = args.get("unit_type")
-            tactic = args.get("tactic")
-            place = args.get("near_place_id")
-            out.append(
-                protocol.make_action(
-                    "spawn_units",
-                    {
-                        "wave_id": f"w-{next(_waves)}",
-                        "faction": "police",
-                        "count": count,
-                        "unit_type": unit_type
-                        if unit_type in POLICE_UNIT_TYPES
-                        else "patrol",
-                        "tactic": tactic if tactic in TACTICS else "chase",
-                        "near_poi_id": place if _place_name(snapshot, place) else None,
-                    },
-                )
+    seen: set[str] = set()
+    granted: dict[str, int] = {}
+    for args in spawns if level_after > 0 else []:
+        unit_type = args.get("unit_type")
+        unit_type = unit_type if unit_type in POLICE_UNIT_TYPES else "patrol"
+        kind = "patrol" if unit_type == "swat" else unit_type
+        if kind in seen:
+            continue
+        seen.add(kind)
+        wanted_n = _int(args.get("count"))
+        if wanted_n is None:  # Altform: target_units = gewünschte Gesamtzahl
+            wanted_n = (_int(args.get("target_units")) or 0) - snapshot.units_active
+        room = config.POLICE_MAX_UNITS - snapshot.units_active - sum(granted.values())
+        quota = min(unit_quota(level_after, kind, snapshot), room)
+        count = min(wanted_n, quota)
+        if count <= 0:
+            continue
+        granted[kind] = count
+        tactic = args.get("tactic")
+        place = args.get("near_place_id")
+        out.append(
+            protocol.make_action(
+                "spawn_units",
+                {
+                    "wave_id": f"w-{next(_waves)}",
+                    "faction": "police",
+                    "count": count,
+                    "unit_type": unit_type,
+                    "tactic": tactic if tactic in TACTICS else "chase",
+                    "near_poi_id": place if _place_name(snapshot, place) else None,
+                },
             )
+        )
 
-    args = first.get("radio_message")
-    if args is not None:
-        text = " ".join(str(args.get("text") or "").split())[: config.RADIO_MAX_CHARS]
-        if text:
-            radio = protocol.make_radio_message(text)
-            out.append(protocol.make_action("radio_message", radio))
+    args = first.get("radio_message") or {}
+    text = " ".join(str(args.get("text") or "").split())[: config.RADIO_MAX_CHARS]
+    if (
+        not text and radio_in is not None
+    ):  # auf player_radio antwortet die Leitstelle immer
+        lowered = level_after < current
+        key = "taunt" if radio_in.get("tone") == "taunt" else "plead"
+        text = RADIO_REPLY["plead_ok" if lowered else key]
+    if text:
+        radio = protocol.make_radio_message(text)
+        out.append(protocol.make_action("radio_message", radio))
     return out
 
 
@@ -320,11 +435,41 @@ def remember(sent: list[Envelope], source: str) -> None:
         elif env.type == "radio_message":
             parts.append("radio")
     MEMORY.append(f"{stamp} {source}: {', '.join(parts) or 'no change'}")
+    PENDING_RADIO.clear()
 
 
 def snapshot() -> AgentSnapshot:
     """Aktueller Lagebericht mit dem Gedächtnis des Dispatchers."""
-    return game_state.STATE.snapshot(AGENT, list(MEMORY))
+    snap = game_state.STATE.snapshot(AGENT, list(MEMORY))
+    if PENDING_RADIO:
+        snap.extras["player_radio"] = dict(PENDING_RADIO)
+    return snap
+
+
+def radio_allowed(now: float) -> bool:
+    """Cooldown für player_radio: True und Zeit merken, wenn die Sperre abgelaufen ist."""
+    last = _radio_state["last"]
+    if last is not None and now - last < config.POLICE_RADIO_COOLDOWN_S:
+        return False
+    _radio_state["last"] = now
+    return True
+
+
+def make_radio_handler(agent_runner: runner.AgentRunner, clock=time.monotonic):
+    """Hub-Handler für player_radio: sofort ein Zyklus (ohne Debounce), sonst ignorieren."""
+
+    async def on_player_radio(event: protocol.PlayerRadio, env: Envelope) -> None:
+        """Funkspruch merken und den Dispatcher sofort entscheiden lassen."""
+        if not radio_allowed(clock()):
+            return
+        PENDING_RADIO.clear()
+        PENDING_RADIO.update({"tone": event.tone, "text": event.text[:120]})
+        # eigener Task, damit der WebSocket-Empfang nicht auf Gemini wartet
+        task = asyncio.get_running_loop().create_task(agent_runner.run_cycle())
+        RADIO_TASKS.add(task)
+        task.add_done_callback(RADIO_TASKS.discard)
+
+    return on_player_radio
 
 
 def trigger_filter(event, env: Envelope) -> bool:
@@ -350,7 +495,10 @@ def spec() -> runner.AgentSpec:
 def register(hub: Hub) -> None:
     """Feature-Einstieg: Gedächtnis leeren, Dispatcher beim Runner anmelden."""
     MEMORY.clear()
-    runner.register_agent(spec(), hub)
+    PENDING_RADIO.clear()
+    _radio_state["last"] = None
+    agent_runner = runner.register_agent(spec(), hub)
+    hub.on_event("player_radio", make_radio_handler(agent_runner))
 
 
 async def startup() -> None:

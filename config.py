@@ -156,6 +156,9 @@ WANTED_MAX = max(1, _env_number("WANTED_MAX", 5))  # Level 0..WANTED_MAX
 WANTED_MAX_STEP = max(1, _env_number("WANTED_MAX_STEP", 2))  # max. Änderung pro Zyklus
 WANTED_DECAY_S = max(1.0, _env_number("WANTED_DECAY_S", 30.0, float))  # ohne Verbrechen
 POLICE_MAX_UNITS = max(1, _env_number("POLICE_MAX_UNITS", 6))  # gleichzeitig aktiv
+# player_radio (Flehen/Provozieren): sofortiger Polizei-Zyklus, danach Sperre in Sekunden
+POLICE_RADIO_COOLDOWN_S = max(0.0, _env_number("POLICE_RADIO_COOLDOWN_S", 8.0, float))
+PLAYER_RADIO_MAX_CHARS = 120  # Funktext des Spielers (Vertrag, kein Tuning)
 RADIO_MAX_CHARS = max(20, _env_number("RADIO_MAX_CHARS", 160))
 
 # --- Quest und Maps (Scheibe 3: Quest) ----------------------------------------

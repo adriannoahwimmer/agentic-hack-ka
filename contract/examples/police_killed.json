@@ -1,0 +1,7 @@
+{
+  "type": "police_killed",
+  "ts": 1763125402123,
+  "payload": {
+    "unit_id": "foot-2"
+  }
+}

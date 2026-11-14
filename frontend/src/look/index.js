@@ -6,7 +6,8 @@
  * Use-Cases:
  * - P schaltet alle Post-Effekte (GTAO, Bloom) aus/an, O nur die Umgebungsverdeckung.
  * - `?fx=0` startet ohne Post-Effekte (schwache Laptops); die Wahl merkt sich der Browser.
- * - Läuft das Spiel mit Post-FX länger als 3 s unter ca. 40 fps, schaltet sich AO selbst ab.
+ * - Qualitätsstufen (look/quality.js): Intel-GPUs starten auf "medium", unter 30 fps geht es eine
+ *   Stufe runter (Pixel-Ratio, Schatten, AO, Post-FX); Q schaltet die Stufe reihum, `?q=` erzwingt sie.
  * Materialien: Alle MeshLambertMaterials in der Szene (auch später hinzugefügte, z. B. von
  * Feature-Scheiben) werden durch MeshStandardMaterials mit gleicher Farbe ersetzt, damit das
  * HDRI-Licht wirkt; Meshes bekommen Schatten (Stadt-Flächen nur empfangend).
@@ -15,12 +16,12 @@ import * as THREE from 'three';
 import { loadEnvironment } from './env.js';
 import { facadeMaterial } from './facade.js';
 import { createPost } from './post.js';
+import { createFpsGuard, gpuName, initialTier, TIERS } from './quality.js';
 
 const SHADOW_EXTENT = 90; // halbe Kantenlänge des Schattenbereichs um den Spieler (m)
 const SHADOW_MAP = 2048;
 const SUN_DIST = 300;
 const SCAN_INTERVAL_S = 0.5;
-const SLOW_FRAME_MS = 25;
 const STORE_KEY = 'faecherstadt.postfx';
 
 /** Gespeicherte Post-FX-Wahl lesen (localStorage kann fehlen oder werfen). */
@@ -94,10 +95,37 @@ export async function createLook({ renderer, scene, camera, input, hud, player, 
   const post = createPost({ renderer, scene, camera });
   if (env) post.setBloomThreshold(Math.min(6, Math.max(2.5, env.peak * 0.02)));
   const urlFx = new URLSearchParams(location.search).get('fx');
-  let postOn = urlFx !== null ? urlFx !== '0' : loadPref() !== '0';
+  let prefFx = urlFx !== null ? urlFx !== '0' : loadPref() !== '0'; // P-Wahl: Post-FX überhaupt erlaubt?
+  let postOn = prefFx;
+
+  // Qualitätsstufe anwenden: Pixel-Ratio deckeln, Schattenkarte, AO und Post-FX.
+  const gpu = gpuName(renderer);
+  let tier = initialTier(gpu);
+  function applyTier(i, reason) {
+    tier = Math.max(0, Math.min(TIERS.length - 1, i));
+    const t = TIERS[tier];
+    const pr = Math.min(devicePixelRatio || 1, t.pr);
+    renderer.setPixelRatio(pr);
+    renderer.setSize(innerWidth, innerHeight);
+    post.setPixelRatio(pr);
+    sun.castShadow = t.shadow > 0;
+    if (t.shadow > 0 && sun.shadow.mapSize.x !== t.shadow) {
+      sun.shadow.mapSize.set(t.shadow, t.shadow);
+      sun.shadow.map?.dispose();
+      sun.shadow.map = null; // wird in der neuen Größe neu angelegt
+    }
+    post.setAo(t.ao);
+    postOn = t.post && prefFx;
+    console.info(`[look] quality ${t.name} (${reason}), pixelRatio ${pr}, GPU: ${gpu || 'unbekannt'}`);
+    if (reason !== 'start') hud.toast(`Graphics: ${t.name}${reason === 'auto' ? ' (low fps)' : ''}`, 2000);
+  }
+  applyTier(tier, 'start');
+  const guard = createFpsGuard(() => { if (tier < TIERS.length - 1) applyTier(tier + 1, 'auto'); });
+  input.onKey('KeyQ', () => { applyTier((tier + 1) % TIERS.length, 'manual'); guard.reset(); });
 
   input.onKey('KeyP', () => {
     postOn = !postOn;
+    prefFx = postOn; // gilt auch für spätere Stufenwechsel
     savePref(postOn);
     hud.toast(`Post-FX ${postOn ? 'on' : 'off'} (P)`, 1500);
   });
@@ -126,12 +154,10 @@ export async function createLook({ renderer, scene, camera, input, hud, player, 
   }
   scan();
 
-  let slowTime = 0;
-  let grace = 5; // s nach dem Start: Ladeframes zählen nicht
 
   /**
    * Pro Frame: Schattenbereich zum Spieler schieben (auf 2-m-Raster, gegen Flimmern),
-   * neue Meshes aufwerten, bei Dauer-Ruckeln AO abschalten.
+   * neue Meshes aufwerten, Bildrate überwachen (adaptive Qualität).
    * @param {number} dt
    */
   function update(dt) {
@@ -142,15 +168,7 @@ export async function createLook({ renderer, scene, camera, input, hud, player, 
     sun.position.set(sx + sunDir.x * SUN_DIST, sunDir.y * SUN_DIST, sz + sunDir.z * SUN_DIST);
     scanTimer -= dt;
     if (scanTimer <= 0) { scanTimer = SCAN_INTERVAL_S; scan(); }
-    if (grace > 0) grace -= dt;
-    else if (postOn && post.aoEnabled()) {
-      slowTime = dt * 1000 > SLOW_FRAME_MS ? slowTime + dt : Math.max(0, slowTime - dt);
-      if (slowTime > 3) {
-        post.setAo(false);
-        slowTime = 0;
-        hud.toast('Ambient occlusion off for performance (O to re-enable)', 3000);
-      }
-    }
+    if (!overview) guard.tick();
   }
 
   /** Bild ausgeben: mit oder ohne Post-FX. */
@@ -159,5 +177,5 @@ export async function createLook({ renderer, scene, camera, input, hud, player, 
     else renderer.render(scene, camera);
   }
 
-  return { update, render, sunDir, postFx: () => postOn };
+  return { update, render, sunDir, postFx: () => postOn, quality: () => TIERS[tier].name, gpu };
 }

@@ -1,0 +1,12 @@
+{
+  "type": "player_position",
+  "ts": 1763125392123,
+  "payload": {
+    "x": -30.5,
+    "z": 480.0,
+    "heading": 3.14,
+    "speed": 1.4,
+    "in_vehicle": false,
+    "zone_id": null
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "type": "shot_fired",
+  "ts": 1763125392123,
+  "payload": {
+    "x": -33.0,
+    "z": 500.2,
+    "shots": 6,
+    "weapon": "pistol",
+    "zone_id": "marktplatz"
+  }
+}

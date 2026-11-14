@@ -1,0 +1,11 @@
+{
+  "type": "radio_message",
+  "ts": 1763125398123,
+  "payload": {
+    "id": "r-7",
+    "speaker": "Dispatch",
+    "text": "Dispatch to all units: shots fired at Market Square, suspect on foot. Two patrols, block Kaiserstrasse.",
+    "voice": "Orus",
+    "tts_key": "1ad3fd64a39b91dd"
+  }
+}

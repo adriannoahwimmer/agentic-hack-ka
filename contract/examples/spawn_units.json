@@ -1,0 +1,12 @@
+{
+  "type": "spawn_units",
+  "ts": 1763125398123,
+  "payload": {
+    "wave_id": "w-3",
+    "faction": "police",
+    "count": 2,
+    "unit_type": "patrol",
+    "tactic": "roadblock",
+    "near_poi_id": "marktplatz"
+  }
+}

@@ -79,14 +79,13 @@ Folgen:
   - Der Wert gilt für beide Modelle (ein Client). 15 s decken den langsamsten erfolgreichen Fallback-Call (12,5 s) ab.
   - 5 s wären zu knapp: 3 von 4 erfolgreichen Fallback-Calls wären dann im 504 gelandet.
   - Hängt das Primärmodell, startet der Fallback nach etwa 15 statt 30 s.
-  - Wenn das zu lang ist, kann man die Deadline pro Modell trennen (Agent 3 s, Fallback 15 s). Das bräuchte eine Änderung in `generate()`.
-- Für das Spiel ist der Fallback mit 7 bis 12 s zu langsam. Das Spiel sollte selbst nach den festen Fahndungsregeln reagieren, wenn `model` das Fallback-Modell ist oder die Antwort ausbleibt.
-- Debounce im Spiel:
-  - Die Latenz ist kein Engpass. Allein von ihr her ginge 1,5 s nach dem letzten Ereignis, spätestens alle 3 s. Die Entscheidung käme dann etwa 2,5 s nach dem Ereignis, bei etwa 20 bis 40 Requests pro Minute und Agent.
-  - Verbindlich sind die Budget-Werte aus `config.py` und dem Plan `docs/plans/2026-11-14-faecherstadt.md`: `AGENT_DEBOUNCE_S` ≥ 5 s und `POLICE_MIN_INTERVAL_S` 8 s, also etwa 3 bis 7,5 Requests pro Minute.
-  - Pro Agent höchstens ein Request gleichzeitig. Snapshots, die währenddessen ankommen, werden zusammengefasst, der neueste zählt.
+  - Die Spiel-Agenten haben eine eigene Deadline pro Request: `AGENT_DEADLINE_MS` (6 s), übergeben als `timeout_ms` an `generate()` (Plan, Phase 0b).
+- Für das Spiel ist das Fallback-Modell mit 5 bis 12,5 s zu langsam. Spiel-Agenten rufen es deshalb nicht auf (`use_fallback_model=False`, Plan, Phase 0b). Fällt das Agent-Modell aus oder bleibt die Antwort aus, greift sofort der geskriptete Fallback des Spiels. So kostet kein Request Geld, dessen Ergebnis verworfen würde.
+- Takt im Spiel: Die Latenz ist kein Engpass, das Request-Budget bestimmt den Takt.
+  - Verbindlich (`config.py`, Plan `docs/plans/2026-11-14-faecherstadt.md`): Sammelfenster `AGENT_DEBOUNCE_S` mindestens 5 s, Mindestabstand `POLICE_MIN_INTERVAL_S` 8 s, also höchstens 7,5 Requests pro Minute und Agent.
+  - Pro Agent höchstens ein Request gleichzeitig. Events, die währenddessen ankommen, fließen in den nächsten Snapshot.
   - Je Request fallen rund 900 Tokens Input und 115 Output an.
-  - `AGENT_DEADLINE_MS` (6 s) reicht dem Agent-Modell mit großem Abstand (max. 0,92 s). Das Fallback-Modell (5 bis 12,5 s) schafft das meist nicht. Dann greift der geskriptete Fallback des Spiels.
+  - `AGENT_DEADLINE_MS` (6 s) reicht dem Agent-Modell mit großem Abstand (max. 0,92 s).
 
 ## Live-Smoke-Tests (2026-11-14, ca. 11:20-11:29 Uhr)
 Mit dem damaligen Default `gemini-4-hydrogen`.

@@ -1,0 +1,8 @@
+{
+  "type": "error",
+  "ts": 1763125392123,
+  "payload": {
+    "code": "invalid_message",
+    "message": "payload.shots: Input should be less than or equal to 50"
+  }
+}

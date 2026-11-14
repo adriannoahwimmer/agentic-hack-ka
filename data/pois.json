@@ -1,0 +1,148 @@
+{
+  "version": 1,
+  "origin": {
+    "lat": 49.0135,
+    "lon": 8.4044
+  },
+  "pois": [
+    {
+      "id": "schloss",
+      "name": "Karlsruhe Palace",
+      "category": "landmark",
+      "lat": 49.013532,
+      "lon": 8.404337,
+      "x": -4.6,
+      "z": -3.6,
+      "radius": 60,
+      "osm_ref": "way/316433983",
+      "tags": [
+        "npc_spot"
+      ],
+      "description": "Baroque palace begun in 1715. The fan-shaped street grid of Karlsruhe radiates from its tower."
+    },
+    {
+      "id": "schlossplatz",
+      "name": "Palace Square",
+      "category": "square",
+      "lat": 49.012094,
+      "lon": 8.404223,
+      "x": -12.9,
+      "z": 156.3,
+      "radius": 50,
+      "osm_ref": "way/1234029143",
+      "tags": [
+        "npc_spot",
+        "crowded"
+      ],
+      "description": "Wide open square south of the palace where the fan of streets begins."
+    },
+    {
+      "id": "marktplatz",
+      "name": "Market Square",
+      "category": "square",
+      "lat": 49.008941,
+      "lon": 8.403918,
+      "x": -35.2,
+      "z": 506.9,
+      "radius": 35,
+      "osm_ref": "way/743665089",
+      "tags": [
+        "mission",
+        "crowded"
+      ],
+      "description": "Central square on Kaiserstrasse with the sandstone Pyramid, tomb of city founder Margrave Karl Wilhelm."
+    },
+    {
+      "id": "stadtkirche",
+      "name": "Protestant City Church",
+      "category": "church",
+      "lat": 49.008511,
+      "lon": 8.404458,
+      "x": 4.2,
+      "z": 554.8,
+      "radius": 20,
+      "osm_ref": "way/90180591",
+      "tags": [
+        "mission"
+      ],
+      "description": "Classicist church by Friedrich Weinbrenner on the east side of the Market Square."
+    },
+    {
+      "id": "verfassungsgericht",
+      "name": "Federal Constitutional Court",
+      "category": "government",
+      "lat": 49.012687,
+      "lon": 8.401525,
+      "x": -209.7,
+      "z": 90.4,
+      "radius": 30,
+      "osm_ref": "way/44364103",
+      "tags": [
+        "mission"
+      ],
+      "description": "Seat of the Federal Constitutional Court of Germany, next to the palace grounds."
+    },
+    {
+      "id": "botanischer_garten",
+      "name": "Botanical Garden",
+      "category": "park",
+      "lat": 49.013018,
+      "lon": 8.400635,
+      "x": -274.6,
+      "z": 53.6,
+      "radius": 30,
+      "osm_ref": "way/477137414",
+      "tags": [
+        "mission"
+      ],
+      "description": "Historic botanical garden with greenhouses at the western edge of the palace grounds."
+    },
+    {
+      "id": "kunsthalle",
+      "name": "State Art Gallery",
+      "category": "museum",
+      "lat": 49.012975,
+      "lon": 8.398965,
+      "x": -396.4,
+      "z": 58.4,
+      "radius": 35,
+      "osm_ref": "relation/7707245",
+      "tags": [
+        "mission"
+      ],
+      "description": "Staatliche Kunsthalle, a major art museum next to the Botanical Garden."
+    },
+    {
+      "id": "kronenplatz",
+      "name": "Kronenplatz",
+      "category": "square",
+      "lat": 49.008587,
+      "lon": 8.409226,
+      "x": 352.0,
+      "z": 546.3,
+      "radius": 40,
+      "osm_ref": "relation/1823563",
+      "tags": [
+        "mission",
+        "gang_turf"
+      ],
+      "description": "Square at the eastern part of the Kaiserstrasse shopping street with a busy tram stop."
+    },
+    {
+      "id": "friedrichsplatz",
+      "name": "Friedrichsplatz",
+      "category": "park",
+      "lat": 49.0079,
+      "lon": 8.400797,
+      "x": -262.8,
+      "z": 622.7,
+      "radius": 40,
+      "osm_ref": "way/4058956",
+      "tags": [
+        "mission",
+        "gang_turf"
+      ],
+      "description": "Small park square south of the Market Square, framed by the natural history museum."
+    }
+  ]
+}

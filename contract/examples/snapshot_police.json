@@ -1,0 +1,89 @@
+{
+  "agent": "police",
+  "t": "2026-11-14T14:03:12Z",
+  "player": {
+    "x": -33.0,
+    "z": 500.2,
+    "zone_id": "marktplatz",
+    "in_vehicle": false,
+    "speed": 1.2
+  },
+  "wanted_level": 1,
+  "units_active": 0,
+  "units_max": 6,
+  "recent_events": [
+    {
+      "type": "shot_fired",
+      "s_ago": 2.1,
+      "zone_id": "marktplatz",
+      "detail": {
+        "shots": 6
+      }
+    },
+    {
+      "type": "npc_killed",
+      "s_ago": 1.4,
+      "zone_id": "marktplatz",
+      "detail": {
+        "npc_kind": "civilian"
+      }
+    }
+  ],
+  "counts_60s": {
+    "shot_fired": 3,
+    "npc_killed": 1,
+    "vehicle_stolen": 0
+  },
+  "memory": [
+    "14:02:40 level 1 (rules), no units"
+  ],
+  "places": [
+    {
+      "id": "schloss",
+      "name": "Karlsruhe Palace"
+    },
+    {
+      "id": "schlossplatz",
+      "name": "Palace Square"
+    },
+    {
+      "id": "marktplatz",
+      "name": "Market Square"
+    },
+    {
+      "id": "stadtkirche",
+      "name": "Protestant City Church"
+    },
+    {
+      "id": "verfassungsgericht",
+      "name": "Federal Constitutional Court"
+    },
+    {
+      "id": "botanischer_garten",
+      "name": "Botanical Garden"
+    },
+    {
+      "id": "kunsthalle",
+      "name": "State Art Gallery"
+    },
+    {
+      "id": "kronenplatz",
+      "name": "Kronenplatz"
+    },
+    {
+      "id": "friedrichsplatz",
+      "name": "Friedrichsplatz"
+    }
+  ],
+  "extras": {
+    "quest": {
+      "title": "Pyramid Trouble",
+      "poi_id": "marktplatz",
+      "status": "target_reached"
+    },
+    "wanted": {
+      "level": 1,
+      "last_crime_s_ago": 1.4
+    }
+  }
+}

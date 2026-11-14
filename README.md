@@ -7,7 +7,7 @@ A browser open world around Karlsruhe Palace, built from real OpenStreetMap data
 Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe (2026-11-14).
 
 ## Demo path
-1. Walk up to **Karl the Fixer** on Palace Square and press **E**. The quest agent picks a real place from the map and gives you a mission.
+1. Walk up to **Karl the Fixer** on Palace Square and press **E**. The quest agent picks a real place from the map and gives you a mission against a rival gang or smuggling crew. The enemies are never real people, officials or institutions, and courts and authorities (e.g. the Federal Constitutional Court) are blocked as quest targets on the server.
 2. Steal a car (**F**) and drive to the target. The marker and the minimap show the way.
 3. When you arrive, the enemies show up ("Here they come!"). Shoot them.
 4. The shots raise your wanted level immediately (rule-based floor). After the event window, the dispatcher agent decides how far to escalate: stars, number of units, tactic (chase, roadblock, surround) and a radio message.

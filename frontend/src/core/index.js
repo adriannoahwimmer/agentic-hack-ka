@@ -16,6 +16,7 @@ import { createHud } from './hud.js';
 import { createInput } from './input.js';
 import * as models from './models.js';
 import { createLook } from '../look/index.js';
+import { createMinimap } from './minimap.js';
 import { createPedestrians } from './pedestrians.js';
 import { createPhysics } from './physics.js';
 import { createVehicles } from './vehicle.js';
@@ -66,6 +67,7 @@ export async function createCore({ net }) {
     THREE, scene, camera, RAPIER, world: physicsWorld, fixed: physics.fixed, input, models, player, worldApi, net, hud, combat, pedestrians,
   });
 
+  const minimap = createMinimap({ hudRoot, data, worldApi, player, net, hud, input });
   const look = await createLook({ renderer, scene, camera, input, hud, player, overview });
 
   // Start-Overlay bis zum Pointer-Lock; danach nur noch bei Esc.
@@ -113,6 +115,7 @@ export async function createCore({ net }) {
         combat.update(dt);
         pedestrians.update(dt);
         vehicles.update(dt);
+        minimap.update(dt);
         for (const fn of updates) {
           try { fn(dt, now / 1000); } catch (err) { console.error('[core] onUpdate', err); }
         }
@@ -126,7 +129,7 @@ export async function createCore({ net }) {
     },
   };
   // Interne Teile für weitere core-Module (Fahrzeuge, Fußgänger), nicht Teil des Vertrags.
-  ctx._core = { physics, player, combat, input, city, pedestrians, vehicles, look };
+  ctx._core = { physics, player, combat, input, city, pedestrians, vehicles, look, minimap };
   if (import.meta.env.DEV) window.__ctx = ctx; // nur im Vite-Dev-Server, für Konsole und Smoke-Tests
   return ctx;
 }

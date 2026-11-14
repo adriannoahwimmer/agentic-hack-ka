@@ -191,11 +191,12 @@ Vorlage für einen neuen Abschnitt:
   - Spieler läuft (WASD, Shift sprintet) mit Third-Person-Kamera (Maus-Orbit im Pointer-Lock, Kamera weicht Wänden aus) und kann nicht durch Gebäude gehen.
   - Linksklick schießt (1 = Pistole, 2 = SMG mit Dauerfeuer). Gebäude blockieren Schüsse.
   - Fußgänger laufen auf Straßen, fliehen bei Schüssen und sind Ziele (`civilian`, hp 1).
+  - Minimap unten links (`minimap.js`): nach Norden ausgerichtet, zeigt Spieler (rot, im Auto blau), POIs und Quest-Ziel (gelber Ring, außerhalb ein Pfeil am Rand). Ab 1 Stern blinkt der Rand rot/blau. Das Quest-Ziel kommt aus `quest_update` (nur lesend über `ctx.net`). Die Grundkarte wird einmal offscreen gezeichnet, neu gezeichnet wird mit 15 Hz. **M** blendet sie aus.
   - Auto klauen und fahren: F steigt in ein geparktes Auto (≤ 4 m) ein und aus. W/S Gas, Bremse, rückwärts, A/D lenken, Leertaste Handbremse, R aufrichten (automatisch nach 2 s auf dem Dach). Ab 4 m/s überfährt das Auto Fußgänger (`npc_killed`).
   - Feature-Scheiben docken über `init(ctx)` an (Polizei, Quest, Overlay).
 - Dateien (`frontend/src/core/`):
   - `index.js`: baut `ctx`, Reihenfolge pro Frame: Physik (fester Schritt) → Spieler/Kamera → Kampf/Events → Fußgänger → `ctx.onUpdate` → Rendern
-  - `renderer.js` (Szene, Licht, Nebel), `physics.js` (Rapier, 1/60 s, `fixed(fn)` vor jedem Schritt), `input.js`, `player.js`, `combat.js`, `models.js`, `hud.js`, `attribution.js`, `world.js`, `city.js`, `pedestrians.js`, `vehicle.js` (Rapier `DynamicRayCastVehicleController`, 8 geparkte Zivilautos, Verfolgerkamera)
+  - `renderer.js` (Szene, Licht, Nebel), `physics.js` (Rapier, 1/60 s, `fixed(fn)` vor jedem Schritt), `input.js`, `player.js`, `combat.js`, `models.js`, `hud.js`, `attribution.js`, `world.js`, `city.js`, `pedestrians.js`, `minimap.js`, `vehicle.js` (Rapier `DynamicRayCastVehicleController`, 8 geparkte Zivilautos, Verfolgerkamera)
 - Schnittstellen:
   - Empfängt `set_wanted_level` und zeigt die Sterne im HUD (`police.js` darf zusätzlich reagieren, `setWanted` ist idempotent). `error` vom Server landet als Warnung in der Konsole.
   - Sendet alle 5 Events: `player_position` (gedrosselt 2 Hz), `shot_fired` (pro 500 ms gebündelt), `npc_killed` (nur combat), `zone_entered` (`previous_zone_id` = letzte Zone, in der der Spieler war, sonst null), `vehicle_stolen` (beim ersten Einsteigen pro Auto, `vehicle_kind` `civilian`).
@@ -240,13 +241,13 @@ Vorlage für einen neuen Abschnitt:
   - Prozedurale Fassaden (`look/facade.js`): Fenster- und Geschossraster per Shader aus Weltkoordinaten (3,2 m Geschoss, 3 m Achse), Schaufenster im Erdgeschoss. Glatte Scheiben spiegeln das HDRI.
   - Post-FX (`look/post.js`): MSAA-Render-Target, GTAO (Umgebungsverdeckung), Bloom (nur HDR-Helles, z. B. Mündungsfeuer ×8), Output-Pass.
   - Tasten: **P** schaltet alle Post-FX, **O** nur die AO. Der Browser merkt sich P (localStorage, robust gegen Fehler). `?fx=0` startet ohne Post-FX.
-  - Sicherung: Liegen die Frames mit AO länger als 3 s über 25 ms (nach 5 s Schonfrist), schaltet sich AO ab, mit Toast.
-- Dateien: `frontend/src/look/{index,env,post,facade}.js`, `frontend/public/look/kloofendal_48d_partly_cloudy_puresky_1k.hdr` (1,4 MB)
+  - Qualitätsstufen (`look/quality.js`, für das Demo-Laptop mit Intel HD 620): high (Pixel-Ratio ≤ 1,5, Schatten 2048, AO, Bloom), medium (≤ 1,0, Schatten 1024, Bloom), low (≤ 1,0, Schatten 1024, ohne Post-FX), lowest (0,75, ohne Schatten und Post-FX). Intel-GPUs starten auf medium, Software-Renderer auf lowest, sonst high. Liegt ein 2-s-Fenster unter 30 fps, geht es eine Stufe runter, mit Toast. Automatisch geht es nie hoch, sonst pendelt es. 5 s Schonfrist nach Start und Wechsel. **Q** schaltet reihum, `?q=high|medium|low|lowest` erzwingt die Startstufe.
+- Dateien: `frontend/src/look/{index,env,post,facade,quality}.js`, `frontend/public/look/kloofendal_48d_partly_cloudy_puresky_1k.hdr` (1,4 MB)
 - Schnittstellen: keine Nachrichten. Alle `MeshLambertMaterial`s in der Szene werden zu `MeshStandardMaterial` mit denselben `color`-/`emissive`-Objekten, auch die später von Features hinzugefügten (Scan alle 0,5 s). Features können also weiter Lambert verwenden, Farbänderungen (Blaulicht) wirken weiter. Meshes werfen und empfangen Schatten, die Stadtflächen empfangen nur. `MeshBasicMaterial` bleibt unverändert.
 - Debug: `?start=0` blendet das Start-Overlay aus (Screenshots, Video).
 - Lizenz: HDRI „Kloofendal 48d Partly Cloudy (Pure Sky)“ von Poly Haven, CC0 (polyhaven.com). Ins README (Phase 4) aufnehmen.
 - Offene Punkte:
-  - Die Bildrate auf dem Demo-Laptop mit Post-FX ist noch nicht gemessen (headless nur Software-Rendering). Bei Bedarf startet das Video mit `?fx=0`, oder AO bleibt aus.
+  - Die Bildrate auf dem Demo-Laptop (HD 620) ist noch nicht gemessen, headless gibt es nur Software-Rendering. Headless belegt: Die Stufen fallen bei niedriger Bildrate high → medium → low → lowest (je ca. 9 s). Fürs Video die Stufe mit `?q=` festlegen.
   - `PCFSoftShadowMap` gibt es in three r187 nicht mehr, deshalb PCF mit `shadow.radius`.
 
 ### Spielzustand (Scheibe Polizei)

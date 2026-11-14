@@ -16,11 +16,12 @@
 import * as THREE from 'three';
 import { Kit } from './kit.js';
 import { pyramide } from './pyramide.js';
+import { rathaus } from './rathaus.js';
 import { schloss } from './schloss.js';
 import { stadtkirche } from './stadtkirche.js';
 
 /** Reihenfolge = Priorität (Schloss zuerst). */
-const LANDMARKS = [schloss, pyramide, stadtkirche];
+const LANDMARKS = [schloss, pyramide, stadtkirche, rathaus];
 
 /**
  * Den einen Grundriss zu einer osm_ref finden (null bei fehlend oder mehrteilig).
@@ -136,7 +137,12 @@ export function addLandmarks({ scene, data }) {
   if (geos.length === 0) return null;
   const kit = new Kit();
   kit.parts = geos;
-  const mesh = new THREE.Mesh(kit.build(), new THREE.MeshLambertMaterial({ vertexColors: true }));
+  const merged = kit.build();
+  if (!merged) {
+    console.warn('[landmarks] Zusammenführen fehlgeschlagen, keine Landmarks');
+    return null;
+  }
+  const mesh = new THREE.Mesh(merged, new THREE.MeshLambertMaterial({ vertexColors: true }));
   mesh.name = 'landmarks';
   mesh.geometry.computeBoundingSphere();
   scene.add(mesh);

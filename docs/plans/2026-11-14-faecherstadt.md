@@ -92,7 +92,7 @@ Browser (Three.js + Rapier, Vite)                      FastAPI :3000 (main.py)
  core/ (Scheibe 1): Stadt, Spieler, Auto,   WS /ws      ws.py -> hub.py (Event-/Action-Bus)
    Ballern (Raycast), HUD, net.js        <=========>      |- game_state.py  Fahndung, Wahrheit   (S2)
  features/*.js registrieren Handler:     Envelope         |- runner.py      Debounce, Clamp, Fallback (S2)
-   police.js (S2) npc/quest/radio.js (S3)                 |    '- agents/police.py, agents/gang.py (S2)
+   police.js (S2) npc/quest/radio.js (S3)                 |    '- agents/police.py (S2)
    agent-log.js (S4)                     POST /npc/talk   |- quests.py      Quest-Prüfung per Position (S3)
                                         ------------->    |- agents/quest.py + maps_facts.py   (S3)
                                          GET /tts/k.wav   '- tts.py         async + Cache      (S3)
@@ -266,7 +266,7 @@ Eine Zeile pro GenAI-Request, also pro tatsächlichem HTTP-Versuch. Auch jede Fa
 
 ### Registrierungspunkte
 - **Backend-Feature-Modul:** exportiert `register(hub: Hub) -> None` und optional `router: APIRouter`, `async startup()` und `async shutdown()`.
-  - `main.py` geht `FEATURE_MODULES` durch: `game_state`, `quests`, `runner`, `maps_facts`, `tts`, `agents.police`, `agents.gang`, `agents.quest`.
+  - `main.py` geht `FEATURE_MODULES` durch: `game_state`, `quests`, `runner`, `maps_facts`, `tts`, `agents.police`, `agents.quest`.
   - Für jedes Modul: importieren, falls vorhanden, dann `register(HUB)`, dann `include_router`, dann die Lifespan-Hooks.
   - Fehlt ein Modul, wird es übersprungen (INFO-Log). Jeder andere Importfehler bricht den Start ab.
   - Die Reihenfolge bestimmt die Handler-Reihenfolge: erst der Zustand, dann die Agenten.
@@ -308,14 +308,14 @@ Bestehende Schlüssel bleiben. Neu sind die folgenden. Scheiben ändern höchste
 | Schlüssel | Default | Zweck |
 |---|---|---|
 | `AGENTS_MODE` | `offline` | `live` oder `offline` (nur Fallbacks, kein Gemini) |
-| `GEMINI_MODEL_POLICE`, `GEMINI_MODEL_GANG`, `GEMINI_MODEL_QUEST` | = `GEMINI_MODEL_AGENT` | pro Agent |
+| `GEMINI_MODEL_POLICE`, `GEMINI_MODEL_QUEST` | = `GEMINI_MODEL_AGENT` | pro Agent |
 | `GEMINI_MODEL_MAPS` | `gemini-3.5-flash-lite` | Maps Grounding (laut Doku unterstützt) |
 | `GEMINI_MODEL_TTS` | `gemini-3.8-flash-lite-tts` | nicht gelistet, Live-Check in Phase 3 |
 | `TTS_VOICE` | `Orus` | Funkstimme („Firm“) |
 | `GENAI_MAX_CALLS_PER_MIN` / `GENAI_MAX_CALLS_TOTAL` | `30` / `400` | hartes Budget pro Prozess |
 | `GENAI_LOG_PATH` / `GENAI_LOG_MAX_PROMPT_CHARS` | `logs/genai.jsonl` / `4000` | |
 | `AGENT_DEBOUNCE_S` | `5.0`, erzwungen ≥ 5 | Sammelfenster |
-| `POLICE_MIN_INTERVAL_S` / `GANG_MIN_INTERVAL_S` | `8` / `15` | Abstand zwischen Zyklen |
+| `POLICE_MIN_INTERVAL_S` | `8` | Abstand zwischen Zyklen |
 | `AGENT_DEADLINE_MS` / `AGENT_ATTEMPTS` | `6000` / `1` | pro Zyklus. Kein Backoff im Spiel, der Fallback-Modellwechsel bleibt. |
 | `WANTED_MAX` / `WANTED_MAX_STEP` / `WANTED_DECAY_S` | `5` / `2` / `30` | Clamps, Regel-Boden |
 | `POLICE_MAX_UNITS` / `RADIO_MAX_CHARS` | `6` / `160` | Clamps |
@@ -336,7 +336,7 @@ Die Client-Drosselung (2 Hz Position, 500 ms Schussbündel) steht als Konstanten
 | `data/pois.json` | 0a, danach **Quest** (Inhalt). Welt und Polizei lesen nur. |
 | `gemini.py`, `genai_log.py`, `hub.py`, `ws.py`, `main.py`, `agents/__init__.py`, `tests/conftest.py`, `tests/fakes.py`, `tests/test_gemini_retry.py`, `tests/test_api.py`, `tests/test_genai_log.py`, `tests/test_hub.py`, `tests/test_ws.py`, `CLAUDE.md`, `agent_docs/gemini_api.md` (Pfadangaben) | 0b |
 | `scripts/bake_osm.py`, `data/osm/raw.json`, `frontend/public/city/*`, `frontend/src/core/**`, `tests/test_bake_osm.py` | Welt |
-| `game_state.py`, `runner.py`, `agents/police.py`, `agents/gang.py`, `frontend/src/features/police.js`, `tests/test_game_state.py`, `tests/test_runner.py`, `tests/test_police.py`, `tests/test_gang.py` | Polizei |
+| `game_state.py`, `runner.py`, `agents/police.py`, `frontend/src/features/police.js`, `tests/test_game_state.py`, `tests/test_runner.py`, `tests/test_police.py` | Polizei |
 | `quests.py`, `agents/quest.py`, `maps_facts.py`, `tts.py`, `data/npcs.json`, `scripts/prewarm.py`, `frontend/src/features/npc.js`, `quest.js`, `radio.js`, `tests/test_quests.py`, `tests/test_quest_agent.py`, `tests/test_maps_facts.py`, `tests/test_tts.py`, `agent_docs/gemini_api.md` (neue Abschnitte TTS und Maps) | Quest |
 | `frontend/src/features/agent-log.js`, `README.md`, `docs/demo.md`, `ci.yml`, `static/` (finaler Build), `test.py` (löschen) | Phase 4 |
 | `Design.md` | 0a legt alle Feature-Abschnitte an. Danach editiert jede Scheibe **nur ihre** Abschnitte. |
@@ -689,18 +689,14 @@ Wahrheit über die Fahndung, Agent-Runner, Polizei-Dispatcher, Fallback, Clamps 
     - `surround`: 4 Offsets um den Spieler
   - Geschwindigkeit nach Level
   - `combat.addTarget(kind "police", hp 3)`
-- `faction: "gang"` nutzt denselben Code mit anderer Farbe (für `gang.py`).
+- `faction: "gang"` wird nicht gesendet (Gang-Boss gestrichen), police.js muss sie nicht behandeln.
 
 **P4: Live-Check und Tuning (ca. 15 min, höchstens 10 Requests)**
 - Einmal `AGENTS_MODE=live`: drei Schießerei-Szenen.
 - Prüfen: Latenz in `logs/genai.jsonl`, sinnvolle Calls, Clamps greifen.
 - Prompt nachschärfen.
 
-**Optional P5: `agents/gang.py` (30 min, nur wenn P1 bis P4 vor 15:30 fertig sind)**
-- Trigger: `npc_killed` vom Typ `gang`/`quest_target` und `zone_entered` in POIs mit `gang_turf`.
-- Tools: `spawn_units(faction gang)` und `radio_message` (`speaker` „Viper“, andere Stimme).
-- Mindestabstand `GANG_MIN_INTERVAL_S`.
-- Gleicher Runner, eigener Fallback.
+**P5 (Gang-Boss): gestrichen am 2026-11-14.** Kein `agents/gang.py`, keine Gang-Schlüssel in `config.py`.
 
 ### Schnittstellen zum Vertrag
 - Konsumiert die Events.
@@ -710,7 +706,7 @@ Wahrheit über die Fahndung, Agent-Runner, Polizei-Dispatcher, Fallback, Clamps 
 - Nutzt `ctx.models`, `ctx.world`, `ctx.combat` und `ctx.hud`.
 
 ### Kürzungsoption
-Gang-Boss (`agents/gang.py`) streichen. Das ist die erste Kürzung insgesamt.
+Gang-Boss (`agents/gang.py`) streichen. Das ist die erste Kürzung insgesamt. **Gezogen am 2026-11-14.**
 
 ### Erfolgskriterien
 #### Automatisch
@@ -909,7 +905,6 @@ scripts\check.ps1                                # muss grün sein, einschließl
 | TTS | jeder neue Funktext (Cache) | 1 | höchstens so viele wie Polizei, typisch 2–3 |
 | Quest | pro NPC-Gespräch, höchstens 3 Schritte | typisch 2 | 1–2 Gespräche, also 2–4 |
 | Maps | pro POI bei Cache-Fehlschlag | 1 | 0 nach Prewarm |
-| Gang (optional) | wie Polizei, Abstand 15 s | 1 | höchstens 4 |
 | **Summe** | | | **typisch 8–12, höchstens ca. 20** |
 
 - 2-Minuten-Demo: ungefähr 20 bis 25 Requests.

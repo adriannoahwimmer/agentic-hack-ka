@@ -9,7 +9,7 @@ Browser (Three.js + Rapier, Vite)                    FastAPI :3000 (main.py)
  core/: Stadt, Spieler, Auto, Ballern,    WS /ws      ws.py -> hub.py (Event-/Action-Bus)
    HUD, net.js                         <=========>      |- game_state.py  Fahndung, Wahrheit
  features/*.js registrieren Handler:    Envelope        |- runner.py      Debounce, Clamp, Fallback
-   police.js, npc.js, quest.js,                         |    '- agents/police.py, agents/gang.py
+   police.js, npc.js, quest.js,                         |    '- agents/police.py
    radio.js, agent-log.js              POST /npc/talk   |- quests.py      Quest-Prüfung per Position
                                        ------------->   |- agents/quest.py + maps_facts.py
                                        GET /tts/k.wav   '- tts.py         async + Cache
@@ -30,7 +30,7 @@ Umsetzungsplan mit Scheiben, Datei-Besitz und Zeitplan: `docs/plans/2026-11-14-f
 - Das Spiel wartet nie auf das LLM. Agenten ändern nur Parameter (Level, Anzahl, Taktik, Funk); bei Fehler, Timeout, `AGENTS_MODE=offline` oder erschöpftem Budget greifen geskriptete Fallbacks.
 
 ### Agenten
-- Polizei-Dispatcher, Gang-Boss, Quest-NPC. Jeder Agent bekommt eine eigene Datei und einen eigenen Abschnitt unter "Features".
+- Polizei-Dispatcher und Quest-NPC (Gang-Boss am 2026-11-14 gestrichen). Jeder Agent bekommt eine eigene Datei und einen eigenen Abschnitt unter "Features".
 - Modell und Limits je Agent kommen aus `config.py`.
 
 ### Karte (OpenStreetMap, vorgebacken)
@@ -142,7 +142,7 @@ Eine Zeile pro GenAI-Request (pro tatsächlichem HTTP-Versuch) und pro Fallback-
 ### Registrierungspunkte
 Ziel: Feature-Scheiben berühren `main.py` und `frontend/src/main.js` nicht.
 - **Backend-Feature-Modul** exportiert `register(hub) -> None` und optional `router` (APIRouter), `async startup()`, `async shutdown()`.
-  - `main.py` geht `FEATURE_MODULES` durch (`game_state`, `quests`, `runner`, `maps_facts`, `tts`, `agents.police`, `agents.gang`, `agents.quest`): importieren, falls vorhanden, `register(HUB)`, `include_router`, Lifespan-Hooks. Fehlt ein Modul, wird es übersprungen. Jeder andere Importfehler bricht den Start ab.
+  - `main.py` geht `FEATURE_MODULES` durch (`game_state`, `quests`, `runner`, `maps_facts`, `tts`, `agents.police`, `agents.quest`): importieren, falls vorhanden, `register(HUB)`, `include_router`, Lifespan-Hooks. Fehlt ein Modul, wird es übersprungen. Jeder andere Importfehler bricht den Start ab.
   - Die Reihenfolge ist die Handler-Reihenfolge: erst Zustand, dann Agenten. Kein Code mit Seiteneffekten beim Import.
 - **Hub** (`hub.py`):
   - `on_event(type | "*", fn)`, `await publish_event(env)` (nur ws.py)
@@ -200,8 +200,9 @@ _noch leer_
 ### Polizei-Dispatcher (Scheibe Polizei)
 _noch leer_
 
-### Gang-Boss (Scheibe Polizei, optional)
-_noch leer_
+### Gang-Boss (gestrichen)
+- Am 2026-11-14 gestrichen (erste Kürzung laut Plan). Es gibt kein `agents/gang.py`.
+- Im Vertrag bleiben `faction: "gang"`, `unit_type: "gang"`, `npc_kind: "gang"` und der POI-Tag `gang_turf` stehen (nur additiv ändern). Quest-Gegner sind `quest_target`.
 
 ### Quest-NPC (Scheibe Quest)
 _noch leer_

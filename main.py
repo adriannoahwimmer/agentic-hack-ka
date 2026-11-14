@@ -42,7 +42,6 @@ FEATURE_MODULES = (
     "maps_facts",
     "tts",
     "agents.police",
-    "agents.gang",
     "agents.quest",
 )
 STATIC_DIR = config.ROOT / "static"

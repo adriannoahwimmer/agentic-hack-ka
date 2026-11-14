@@ -127,7 +127,6 @@ DEBUG_ENDPOINTS = _env_flag("DEBUG_ENDPOINTS", False)  # POST /debug/action u. a
 
 # --- Modelle je Agent ---------------------------------------------------------
 GEMINI_MODEL_POLICE = _env("GEMINI_MODEL_POLICE", GEMINI_MODEL_AGENT)
-GEMINI_MODEL_GANG = _env("GEMINI_MODEL_GANG", GEMINI_MODEL_AGENT)
 GEMINI_MODEL_QUEST = _env("GEMINI_MODEL_QUEST", GEMINI_MODEL_AGENT)
 # Maps Grounding: laut Doku (2026-11-14) für 3.5-flash-lite unterstützt, nur Englisch.
 GEMINI_MODEL_MAPS = _env("GEMINI_MODEL_MAPS", "gemini-3.5-flash-lite")
@@ -135,11 +134,10 @@ GEMINI_MODEL_MAPS = _env("GEMINI_MODEL_MAPS", "gemini-3.5-flash-lite")
 GEMINI_MODEL_TTS = _env("GEMINI_MODEL_TTS", "gemini-3.8-flash-lite-tts")
 TTS_VOICE = _env("TTS_VOICE", "Orus")  # Prebuilt-Stimme für den Polizeifunk ("Firm")
 
-# --- Agent-Runner (Scheibe 2: Polizei) ----------------------------------------
+# --- Agent-Runner (Scheibe 2: Polizei; Gang-Boss gestrichen) ----------------------------------------
 # Sammelfenster nach dem ersten Trigger-Event. Regel: mindestens 5 s.
 AGENT_DEBOUNCE_S = max(5.0, _env_number("AGENT_DEBOUNCE_S", 5.0, float))
 POLICE_MIN_INTERVAL_S = max(1.0, _env_number("POLICE_MIN_INTERVAL_S", 8.0, float))
-GANG_MIN_INTERVAL_S = max(1.0, _env_number("GANG_MIN_INTERVAL_S", 15.0, float))
 # Deadline pro Agent-Zyklus, danach greift der Fallback. Im Spiel kein Backoff.
 AGENT_DEADLINE_MS = max(500, _env_number("AGENT_DEADLINE_MS", 6000))
 AGENT_ATTEMPTS = max(1, _env_number("AGENT_ATTEMPTS", 1))  # Versuche pro Modell

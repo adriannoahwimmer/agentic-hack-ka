@@ -852,7 +852,7 @@ Das Agent-Log-Overlay macht die Agenten sichtbar. Dazu kommen README, Sicherheit
 3. **`test.py` löschen.** Den letzten Stand von CLAUDE.md und `agent_docs` prüfen.
 4. **Secret-Scan (ca. 10 min)**
    - `gitleaks detect --source . --log-opts="--all"` (Binary per `winget install gitleaks` oder aus dem GitHub-Release)
-   - zusätzlich `git log -p --all | Select-String "AIza"` muss leer sein
+   - zusätzlich `git log -p --all | Select-String -Pattern "AIza[0-9A-Za-z_-]{35}"` muss leer sein (echtes Key-Format; Test-Dummys und diese Zeile passen nicht darauf)
    - prüfen, dass `logs/`, `cache/` und `.env` nicht getrackt sind
 5. **Build-Commit (ca. 10 min):** `static/` aus `.gitignore` nehmen, `npm --prefix frontend run build`, `git add static`. Das Repo läuft danach ohne Node.
 6. **`ci.yml` (optional, ca. 20 min):** unverändert Python-only, weil `static/` committet ist. Deploy laut `agent_docs/codesphere_deploy.md`, dort `AGENTS_MODE=live` und das Budget setzen.

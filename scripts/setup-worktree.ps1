@@ -1,4 +1,4 @@
-# setup-worktree.ps1 – legt einen Feature-Worktree fuer Faecherstadt Agents an.
+# setup-worktree.ps1 - legt einen Feature-Worktree fuer Faecherstadt Agents an.
 # Aufruf im Hauptordner (C:\Users\Wimme\agentic-hack-ka):
 #   .\scripts\setup-worktree.ps1 polizei  3001 5174
 #   .\scripts\setup-worktree.ps1 quest    3002 5175
@@ -17,10 +17,10 @@ $wt   = Join-Path (Split-Path $main -Parent) "ka-$Name"
 $branch = "feat/$Name"
 
 # 1. Sauberer Stand pruefen
-if (git -C $main status --porcelain) { throw "Hauptordner hat uncommittete Aenderungen – erst Schritt 0 committen." }
+if (git -C $main status --porcelain) { throw "Hauptordner hat uncommittete Aenderungen - erst Schritt 0 committen." }
 
 # 2. Worktree + Branch
-if (Test-Path $wt) { Write-Host "Worktree $wt existiert schon – ueberspringe git worktree add." }
+if (Test-Path $wt) { Write-Host "Worktree $wt existiert schon - ueberspringe git worktree add." }
 else { git -C $main worktree add $wt -b $branch }
 
 # 3. .env kopieren und Ports setzen (Key bleibt nur lokal, .env ist gitignored)

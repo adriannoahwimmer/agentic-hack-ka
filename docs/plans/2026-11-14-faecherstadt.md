@@ -541,6 +541,7 @@ Hub-API, Feature-Modul-Protokoll, JSONL-Format, `agent_log`, `/debug/action`.
 - Hub-Handler-Signatur: `fn(event, envelope)` bzw. `fn(payload_model, envelope)`, wie `net.on(type, (payload, env) => ...)` im Frontend.
 - Budget-Ablehnung ist `HTTPException(503, "GenAI-Budget erschöpft: ...")` ohne Request und ohne Logzeile. Der Agent loggt danach seinen Fallback.
 - Zwischendurch gemergt: PR #3 (setup-worktree.ps1 nur ASCII, Test `test_scripts_ascii.py`).
+- Nachtrag nach dem Polizei-Merge: Die API lehnt Server-Deadlines unter 10 s ab (400 „Minimum allowed deadline is 10s“). `gemini.py` schickt deshalb immer `max(GEMINI_MIN_SERVER_DEADLINE_MS, timeout_ms)`. `agenerate()` setzt die kurze Spiel-Deadline lokal durch (asyncio, HTTPException 504). `AGENT_DEADLINE_MS` ist wieder 6 s, der Polizei-Workaround mit 10 s ist zurückgenommen.
 
 ---
 

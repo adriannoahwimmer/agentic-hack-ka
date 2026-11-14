@@ -336,7 +336,23 @@ Vorlage für einen neuen Abschnitt:
 - Offene Punkte: Das Rauschen braucht eine Nutzergeste (Autoplay-Regel), vorher spricht nur die Stimme.
 
 ### Agent-Log-Overlay (Phase 4)
-_noch leer_
+- Dateien: `frontend/src/ui/agentOverlay.js` (eingehängt über `features/agentOverlay.js`).
+- Panel oben rechts, Taste **L** toggelt, standardmäßig an. Kopfzeile: POLICE DISPATCHER · KARL THE FIXER.
+- Liest WS `agent_log` und zeigt die letzten 5 Einträge: Agent-Name, Tool-Calls kompakt (`set_wanted_level 3`, `spawn_units 2× foot chase`, `radio_message: "…"`), "Warum: …" (reason), Modell + Latenz. Tags: FALLBACK (orange), ERROR (rot).
+- Spieler-Funksprüche kommen über das window-CustomEvent `player-radio` {tone, text} dazu (Eintrag "YOU").
+- Reines DOM, nur bei neuer Nachricht neu gebaut, `pointer-events: none`.
+
+### Spieler-Funk (Endspurt)
+- Dateien: `frontend/src/ui/radioButtons.js` (eingehängt über `features/radioButtons.js`); Server-Seite siehe Polizei-Dispatcher (`player_radio`).
+- Tasten **G** (plead, "Ich hab nichts gemacht!") und **T** (taunt, "Ihr kriegt mich nie!") plus zwei HUD-Buttons unten rechts. Je 4 deutsche Sätze, zufällig.
+- Sendet `player_radio` {tone, text}, zeigt den Satz als Untertitel und im Overlay. Gemeinsamer Cooldown 8 s (wie der Server), Buttons zeigen die Restzeit.
+
+### Fußstreife und Panzer (Endspurt)
+- Dateien: `frontend/src/police/footCop.js`, `frontend/src/police/tank.js`; Dispatch nach `unit_type` in `features/police.js`.
+- `foot`: blauer Polizist, steigt aus einem Streifenwagen < 20 m vom Spieler (Wagen hält 3 s) oder spawnt 35–50 m entfernt. Luftlinie, Halt in 12 m, Schuss alle 1,5 s (35 % Treffer, Mündungsfeuer, roter Bildschirmrand). Max. 3. Abschießbar (hp 2): erster Treffer `police_hit`, Tod `police_killed`.
+- `tank`: Streifenwagen-Box ×1,6, dunkelgrün mit Turm, 60 % Tempo, schießt nicht, fährt bis an den Spieler und schiebt (Rapier-Character-Controller mit Impulsen).
+- `core/combat.js`: Ziele können optional `onHit(hpLeft)` angeben.
+- Offen: Keine Einheiten-Positionen an den Server, deshalb greift die 40-m-Sperre beim Abklingen nicht (nur die Zeitregel). Keine Spieler-HP.
 
 ### Starter-Endpoints `/chat` und `/agent`
 - Zweck: Gemini-Setup (Key, Modelle, Retry und Fallback) ohne Spiel-Frontend prüfen und den Tool-Loop debuggen.

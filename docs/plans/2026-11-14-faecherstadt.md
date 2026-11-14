@@ -362,30 +362,28 @@ Gemeinsame Dateien nach Schritt 0, also `config.py`, `Design.md` und `.env.examp
 ## Worktree-Setup (PowerShell, einmal pro Scheibe)
 
 ```powershell
-# im Haupt-Checkout, nach dem Merge von 0a (welt) bzw. 0b (polizei, quest)
-git pull
-git worktree add ..\fk-welt -b feat/welt main          # analog: ..\fk-polizei feat/polizei, ..\fk-quest feat/quest
-cd ..\fk-welt
-python -m venv .venv
-.venv\Scripts\pip install -r requirements-dev.txt
-Copy-Item ..\agentic-hack-ka\.env .env                 # gitignored; danach Werte unten anpassen
-cd frontend; npm install; cd ..
-Set-Content -Encoding utf8 frontend\.env.local "BACKEND_PORT=3001`nVITE_PORT=5173"   # gitignored
-code .                                                 # eigene Claude-Code-Session in diesem Ordner
+# im Haupt-Checkout, sauber und auf aktuellem main; nach 0a (welt) bzw. 0b (polizei, quest)
+git checkout main; git pull
+.\scripts\setup-worktree.ps1 welt    3003 5173
+.\scripts\setup-worktree.ps1 polizei 3001 5174
+.\scripts\setup-worktree.ps1 quest   3002 5175
 ```
+Das Skript legt `..\ka-<name>` mit Branch `feat/<name>` an. Danach:
+- Es kopiert die `.env` und setzt `PORT`, `VITE_PORT` und `BACKEND_URL`. `vite.config.js` liest daraus nur die Port-Schlüssel.
+- Es installiert `requirements-dev.txt` und führt `npm ci` aus.
+- Es lässt `check.ps1` laufen und öffnet VS Code.
 
-| Worktree | Branch | Backend | Vite | `.env`-Ergänzungen |
+| Worktree | Branch | Backend | Vite | `.env`-Ergänzungen von Hand |
 |---|---|---|---|---|
 | Haupt-Checkout | `main` | 3000 (liefert `/play/`) | – (Build) | `AGENTS_MODE=live` nur für den Demo-Lauf |
-| `..\fk-welt` | `feat/welt` | 3001 | 5173 | `AGENTS_MODE=offline`, `DEBUG_ENDPOINTS=1` |
-| `..\fk-polizei` | `feat/polizei` | 3002 | 5174 | `AGENTS_MODE=offline`, `DEBUG_ENDPOINTS=1`, `GENAI_MAX_CALLS_TOTAL=60` |
-| `..\fk-quest` | `feat/quest` | 3003 | 5175 | `AGENTS_MODE=offline`, `DEBUG_ENDPOINTS=1`, `GENAI_MAX_CALLS_TOTAL=60` |
+| `..\ka-welt` | `feat/welt` | 3003 | 5173 | `DEBUG_ENDPOINTS=1` (`AGENTS_MODE` bleibt `offline`) |
+| `..\ka-polizei` | `feat/polizei` | 3001 | 5174 | `DEBUG_ENDPOINTS=1`, `GENAI_MAX_CALLS_TOTAL=60` |
+| `..\ka-quest` | `feat/quest` | 3002 | 5175 | `DEBUG_ENDPOINTS=1`, `GENAI_MAX_CALLS_TOTAL=60` |
 
-- Abweichung von der Vorgabe (Backend 3001/3002, Vite 5173): Drei Worktrees brauchen drei Backend-Ports und drei Vite-Ports, weil Vite mit `strictPort` läuft.
-- Backend starten: `.venv\Scripts\uvicorn main:app --reload --port 3002`.
-- Frontend starten: `npm --prefix frontend run dev`. Danach `http://localhost:5174/play/` öffnen.
+- Backend starten: `.venv\Scripts\uvicorn main:app --reload --port <Backend>`.
+- Frontend starten: `npm --prefix frontend run dev`. Danach `http://localhost:<Vite>/play/` öffnen. Der Proxy zeigt automatisch auf das Backend des Worktrees.
 - Für bewusste Live-Tests setzt man `AGENTS_MODE=live` nur temporär in der Shell (`$env:AGENTS_MODE='live'`). Danach die Requests zählen: `(Get-Content logs\genai.jsonl).Count`.
-- Aufräumen nach dem Merge: `git worktree remove ..\fk-welt`.
+- Aufräumen nach dem Merge: `git worktree remove ..\ka-welt`.
 
 ---
 
@@ -539,7 +537,7 @@ Hub-API, Feature-Modul-Protokoll, JSONL-Format, `agent_log`, `/debug/action`.
 
 ---
 
-## Phase 1: Scheibe Welt (`feat/welt`, `..\fk-welt`, 13:00–16:00)
+## Phase 1: Scheibe Welt (`feat/welt`, `..\ka-welt`, 13:00–16:00)
 
 ### Überblick
 OSM-Stadt, Spieler, Kamera, Ballern, Auto, Fußgänger, HUD und `ctx`. Diese Scheibe liefert die Bühne und alle Client-Events. Sie entwickelt komplett mit `AGENTS_MODE=offline` und braucht 0 Gemini-Requests. Einen Rebase auf main nach 0b macht sie, sobald es passt; die Dateien sind disjunkt.
@@ -615,7 +613,7 @@ Kinematisches Arcade-Auto statt Rapier-Vehicle-Controller: Fahrradmodell, Charac
 
 ---
 
-## Phase 2: Scheibe Polizei und Spielzustand (`feat/polizei`, `..\fk-polizei`, 13:35–16:10)
+## Phase 2: Scheibe Polizei und Spielzustand (`feat/polizei`, `..\ka-polizei`, 13:35–16:10)
 
 ### Überblick
 Wahrheit über die Fahndung, Agent-Runner, Polizei-Dispatcher, Fallback, Clamps und die clientseitige Verfolgung. Vorher den Skill `gemini-api-dev` laden.
@@ -718,7 +716,7 @@ Gang-Boss (`agents/gang.py`) streichen. Das ist die erste Kürzung insgesamt.
 
 ---
 
-## Phase 3: Scheibe Quest, Maps und TTS (`feat/quest`, `..\fk-quest`, 13:35–16:20)
+## Phase 3: Scheibe Quest, Maps und TTS (`feat/quest`, `..\ka-quest`, 13:35–16:20)
 
 ### Überblick
 Quest-NPC hinter `POST /npc/talk`, Quest-Wahrheit per Position, Maps-Fakten und Polizeifunk-TTS. Vorher den Skill `gemini-api-dev` laden und für TTS und Maps die Doku-Seiten lesen (`speech-generation.md`, `maps-grounding.md`).

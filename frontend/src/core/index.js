@@ -1,69 +1,116 @@
 /**
- * PLATZHALTER-Kern bis die Scheibe Welt ihn ersetzt (Plan, Phase 1).
+ * Frontend-Kern: baut ctx gemäß types.js und startet die Spielschleife (Scheibe Welt).
  *
- * Zweck: Das Skelett baut und läuft, bevor es eine Stadt gibt. Zeigt den
- * Verbindungsstatus und loggt jede eingehende Aktion in die Konsole, damit
- * /debug/action und der WebSocket ohne Spiel prüfbar sind.
- * Use-Cases: Smoke-Test von Schritt 0b, Startpunkt für core/ in Scheibe 1.
- * Liefert nur einen Teil von ctx (siehe types.js); Scheibe 1 liefert alles.
+ * Zweck: Einstieg für main.js (`createCore({net})`). Verdrahtet Renderer, Physik, Stadt,
+ * Welt, Input, HUD, Spieler und Kampf; Features bekommen ctx in `init(ctx)`.
+ * Use-Cases: Spiel starten, Feature-Scheiben (Polizei, Quest, Overlay) andocken.
+ *
+ * Reihenfolge pro Frame: Physik (fester Schritt, inkl. Spieler-Controller) → Spieler/Kamera
+ * → Kampf und Events → Feature-Updates (`ctx.onUpdate`) → Rendern.
  */
 import * as THREE from 'three';
+import { addAttribution } from './attribution.js';
+import { buildCity, loadCityData } from './city.js';
+import { createCombat } from './combat.js';
+import { createHud } from './hud.js';
+import { createInput } from './input.js';
+import * as models from './models.js';
+import { createPhysics } from './physics.js';
+import { createPlayer } from './player.js';
+import { createRenderer } from './renderer.js';
+import { createWorld } from './world.js';
+
+const SPAWN_POI = 'schlossplatz';
+/** Debug/Intro: `?view=top` zeigt die Stadt von oben (Kamera fest über dem Schloss). */
+const overview = new URLSearchParams(location.search).get('view') === 'top';
 
 /**
- * Minimalen Kern bauen.
+ * Kern bauen.
  * @param {{net: import('../types.js').Net}} deps
- * @returns {Promise<Partial<import('../types.js').Ctx>>}
+ * @returns {Promise<import('../types.js').Ctx>}
  */
 export async function createCore({ net }) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(innerWidth, innerHeight);
-  document.getElementById('app').appendChild(renderer.domElement);
-
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x10141c);
-  const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 2000);
-  camera.position.set(0, 120, 160);
-  camera.lookAt(0, 0, 0);
-  scene.add(new THREE.GridHelper(400, 40, 0x3a4660, 0x222a3a));
-
-  const label = document.createElement('div');
-  label.style.cssText = 'position:fixed;left:16px;top:16px;font:14px system-ui;color:#e8ecf2';
-  document.getElementById('hud').appendChild(label);
-  const showStatus = (ok) => {
-    label.textContent = `Fächerstadt Agents: world arrives in slice 1 · server ${ok ? 'connected' : 'offline'}`;
-  };
-  showStatus(false);
+  const hudRoot = document.getElementById('hud');
+  const { renderer, scene, camera } = createRenderer(document.getElementById('app'));
+  const hud = createHud(hudRoot);
+  addAttribution(hudRoot);
+  hud.setConnected(net.connected);
   net.onStatus((ok) => {
-    showStatus(ok);
+    hud.setConnected(ok);
     console.info(`[net] ${ok ? 'connected' : 'disconnected'}`);
   });
-  net.on('*', (payload, env) => console.info('[net] action', env.type, payload));
+  net.on('*', (payload, env) => console.debug('[net] action', env.type, payload));
 
-  addEventListener('resize', () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
+  const [physics, data] = await Promise.all([createPhysics(), loadCityData()]);
+  const { RAPIER, world: physicsWorld } = physics;
+
+  const worldApi = createWorld({ roads: data.roads, bounds: null });
+  const city = buildCity({ scene, RAPIER, world: physicsWorld, data, pois: worldApi.pois });
+  worldApi.bounds = city.bounds;
+
+  const input = createInput(renderer.domElement);
+  const spawnPoi = worldApi.poi(SPAWN_POI) ?? { x: 0, z: 150 };
+  const player = createPlayer({
+    THREE, scene, camera, RAPIER, world: physicsWorld, fixed: physics.fixed, input, models,
+    spawn: { x: spawnPoi.x, z: spawnPoi.z + 20 },
   });
+  const combat = createCombat({ THREE, scene, camera, RAPIER, world: physicsWorld, input, hud, net, player, worldApi });
+
+  // Start-Overlay bis zum Pointer-Lock; danach nur noch bei Esc.
+  document.addEventListener('pointerlockchange', () => hud.setStartVisible(!input.locked()));
 
   const updates = new Set();
-  return {
+  if (overview) {
+    hud.setStartVisible(false);
+    scene.fog = null;
+    camera.far = 4000;
+    camera.updateProjectionMatrix();
+  }
+
+  /** @type {import('../types.js').Ctx} */
+  const ctx = {
     three: THREE,
     scene,
     camera,
     renderer,
+    rapier: RAPIER,
+    physics: physicsWorld,
     net,
     onUpdate(fn) {
       updates.add(fn);
       return () => updates.delete(fn);
     },
+    input: { isDown: input.isDown, onKey: input.onKey },
+    player: {
+      position: player.position,
+      heading: player.heading,
+      inVehicle: player.inVehicle,
+      object3d: player.object3d,
+    },
+    world: worldApi,
+    combat: { addTarget: combat.addTarget, removeTarget: combat.removeTarget, onShot: combat.onShot },
+    models: { car: models.car, person: models.person },
+    hud,
     start() {
       let last = performance.now();
       renderer.setAnimationLoop((now) => {
         const dt = Math.min((now - last) / 1000, 0.1);
         last = now;
-        for (const fn of updates) fn(dt, now / 1000);
+        physics.step(dt);
+        player.update(dt);
+        combat.update(dt);
+        for (const fn of updates) {
+          try { fn(dt, now / 1000); } catch (err) { console.error('[core] onUpdate', err); }
+        }
+        if (overview) {
+          camera.position.set(0, 1100, 260);
+          camera.lookAt(0, 0, 220);
+        }
         renderer.render(scene, camera);
       });
     },
   };
+  // Interne Teile für weitere core-Module (Fahrzeuge, Fußgänger), nicht Teil des Vertrags.
+  ctx._core = { physics, player, combat, input, city };
+  return ctx;
 }

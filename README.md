@@ -1,4 +1,4 @@
-# Fächerstadt Agents
+# Grand Theft Fächer (Fächerstadt Agents)
 
 Video: TBD
 
@@ -11,7 +11,7 @@ Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe (2026-11-14).
 2. Steal a car (**F**) and drive to the target. The marker and the minimap show the way.
 3. When you arrive, the enemies show up ("Here they come!"). Shoot them.
 4. The shots raise your wanted level immediately (rule-based floor). After the event window, the dispatcher agent decides how far to escalate: stars, number of units, tactic (chase, roadblock, surround) and a radio message.
-5. Police cars spawn and chase you. The radio message appears as a subtitle and is spoken by the browser.
+5. Police cars with flashing red and blue light bars and wailing sirens spawn and chase you. The dispatcher's radio call is in German (Polizeifunk, with real Karlsruhe place names). It appears as a subtitle and is spoken by the browser with a German voice.
 6. Kill the last target and you get **Mission complete**.
 
 ## Controls
@@ -81,13 +81,23 @@ Browser (Three.js + Rapier, Vite)              FastAPI :3000
 - **Police dispatcher.** Crime events open a collection window of at least 5 s, with at least 8 s between cycles. Each cycle sends a compact snapshot and exactly one Gemini request (function calling, mode `ANY`). The tools are `set_wanted_level`, `spawn_units` and `radio_message`. The server validates and clamps the result (wanted level 0–5, at most 6 units) before sending it to the browser.
 - **Quest giver.** A short tool loop: `lookup_place`, then `assign_quest`. It may only choose places from `data/pois.json`. The server, not the model, decides when a quest is complete, from the player position and kill events.
 - **Never wait for the model.** Game agents use a local 6 s deadline (Gemini itself gets at least 10 s, its minimum) and no slow fallback model. On timeout, error, budget exhaustion or offline mode, scripted fallbacks take over.
-- **Logging.** Every Gemini request goes to `logs/genai.jsonl` as one JSON line: agent, model, tool calls, reason, latency, without keys. Each line is also sent to the browser as `agent_log`; the in-game overlay for it is still open.
+- **Model choice.** Heavier models were too slow for real-time gameplay; `gemini-3.5-flash-lite` was the fastest option that still makes reliable tool calls within our 6 s deadline. Heavier models can be set via `GEMINI_MODEL_AGENT`.
+- **Logging.** Every Gemini request goes to `logs/genai.jsonl` as one JSON line: agent, model, tool calls, reason, latency, without keys. Each line is also sent to the browser as `agent_log` and appears in the developer console (verbose level). There is no in-game overlay yet; for the demo video the log runs in a second terminal (`Get-Content logs\genai.jsonl -Wait -Tail 3`).
 - **Map.** OSM data is baked once into compact JSON (`scripts/bake_osm.py`, 959 buildings, 1546 road segments, 230 areas) with a single projection (`geo.py`, origin at the palace). There are no map requests at runtime.
 
 ## Landmarks
-_Placeholder, to be confirmed after the landmarks merge._
+Four hand-modelled low-poly landmarks (`frontend/src/landmarks/`) make the city recognisable. Each one finds its OSM footprint by `osm_ref` in the baked buildings and sits on it, aligned to the longest edge:
+- **Karlsruhe Palace** (`way/316433983`): the octagonal palace tower at the centre of the fan of streets (about 51 m), a grey-blue mansard roof and the central gable facing Palace Square.
+- **Pyramid** on the Market Square (`way/90034221`): the red sandstone tomb of the city's founder (about 6.8 m). It is the only landmark that hides its extruded OSM block (`ctx.world.hideBuilding`); the block's collider stays as the pyramid's collision.
+- **Protestant City Church** (`way/90180591`): Weinbrenner's portico with six columns and a pediment facing the square, the nave roof and the white tower (about 62 m).
+- **Town Hall** (`relation/1333212`): hipped roof, central projection with a gable towards the square, and the town hall tower.
 
-Hand-modelled low-poly models of the Palace, the Pyramid, the Protestant City Church and the Town Hall (Rathaus) replace the generic extruded OSM blocks at these spots.
+All landmarks are a single mesh with vertex colours and one Lambert material (one extra draw call, no textures, no per-frame code) and add no colliders. A landmark whose footprint is missing is skipped with a console warning.
+
+## Police polish
+- **Light bars:** police cars flash red and blue (`ctx.models.setLightbar`).
+- **Siren:** a wail generated with the Web Audio API, no audio file. A sawtooth oscillator sweeps between about 600 and 1300 Hz through a low-pass filter. It gets louder as the nearest police car comes closer and wails faster at higher wanted levels. It starts after the first click (browser autoplay rules).
+- **German police radio:** the dispatcher prompt asks for one short German Polizeifunk call (at most 15 words) with the real German place name. The scripted fallback calls are German too. The browser speaks them with a German voice (`de-DE`), with a short burst of radio static before and after. The rest of the game is in English.
 
 ## APIs, models, frameworks and tools
 **Google Gemini**
@@ -120,7 +130,7 @@ Hand-modelled low-poly models of the Palace, the Pyramid, the Protestant City Ch
 - **Google Photorealistic 3D Tiles** instead of extruded OSM blocks, using our own Google Maps Platform key.
 - **Maps Grounding** for real facts in quest dialogs. Implemented as a separate cached call, but blocked on this project (HTTP 429 for the `google_maps` tool); the quest giver currently uses the POI descriptions.
 - **Gemini TTS** (`gemini-3.8-flash-lite-tts`) for the police radio. The `generate_content` call on API version `v1` was rejected (400, `speechConfig` unknown); next try is `v1beta` or the Interactions API. Until then the browser speaks.
-- The in-game agent log overlay (the server already streams `agent_log`).
+- An in-game overlay for the agent log. The server already streams every log line as `agent_log`; today it only reaches the browser console.
 
 ## Repository map
 - `main.py`: app and feature loader
@@ -128,7 +138,7 @@ Hand-modelled low-poly models of the Palace, the Pyramid, the Protestant City Ch
 - `hub.py`, `ws.py`: event bus and WebSocket
 - `protocol.py`: the contract
 - `game_state.py`, `runner.py`, `agents/`, `quests.py`: game logic and agents
-- `frontend/`: the game
+- `frontend/`: the game (`core/`, `features/`, `landmarks/`, `look/`, `audio/`)
 - `scripts/`: OSM bake, checks, worktree setup
 - `Design.md`: architecture, contract and features
 - `docs/plans/`: implementation plan

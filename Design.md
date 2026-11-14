@@ -232,13 +232,43 @@ Vorlage für einen neuen Abschnitt:
   - Überlappende Grünflächen zeigen aus großer Höhe Z-Fighting. In Spielerhöhe ist das unauffällig.
 
 ### Spielzustand (Scheibe Polizei)
-_noch leer_
+- Zweck: Wahrheit über Fahndung, Einheiten, Spielerposition und jüngste Events. Baut die Agent-Snapshots.
+- Use-Cases:
+  - Regel-Boden: `shot_fired`, `npc_killed` (außer `gang`/`quest_target`) und `vehicle_stolen` heben Level 0 sofort auf 1 (`source: "rules"`) und setzen `last_crime`.
+  - Decay: Nach `WANTED_DECAY_S` ohne Verbrechen (und seit dem letzten Decay) sinkt das Level um 1 (Task, Tick 1 s).
+  - Einheitenbilanz: Summe aus `spawn_units` (police) minus getötete `police`, gedeckelt auf `POLICE_MAX_UNITS`, bei Level 0 gleich 0.
+  - Reload: `on_connect` schickt das aktuelle `set_wanted_level` (`reason: "State sync"`).
+- Dateien: `game_state.py`, `tests/test_game_state.py`
+- Schnittstellen:
+  - Das Level ändert sich nur über ausgehende `set_wanted_level`-Aktionen (`on_action`), egal ob Regeln, Agent oder Fallback. Eine Quelle der Wahrheit.
+  - Ringpuffer: letzte 50 Events bzw. 120 s; `player_position` wird nur als Zustand gemerkt, nicht gepuffert.
+  - `snapshot(agent, memory)` → `AgentSnapshot` (12 Events, 5 Gedächtniszeilen, alle POIs als `places`, `extras` vom Hub). Test: unter 2 KB.
+  - Snapshot-Provider `wanted`: `{level, floor, crime_s_ago}`. `floor` ist 1, solange das letzte Verbrechen unter `WANTED_DECAY_S` her ist.
+  - `GET /debug/state` (nur `DEBUG_ENDPOINTS=1`).
+- Agent und Modell: keine (0 Requests).
 
 ### Agent-Runner (Scheibe Polizei)
-_noch leer_
+- Zweck: entscheidet, wann ein Spiel-Agent läuft, und sorgt dafür, dass das Spiel nie auf ihn wartet.
+- Use-Cases: `agents/police.py` meldet sich mit `register_agent(AgentSpec(...))` an.
+- Dateien: `runner.py`, `tests/test_runner.py`
+- Ablauf: Trigger-Event (optional `trigger_filter`) öffnet ein Sammelfenster `AGENT_DEBOUNCE_S` → Mindestabstand `min_interval_s` seit dem letzten Zyklusstart → Lock (ein Call pro Agent) → `decide` mit `wait_for(AGENT_DEADLINE_MS)` → `clamp` → `send_action` → `on_sent` (Gedächtnis).
+  - Fallback bei `AGENTS_MODE=offline` (ohne Request), Timeout, `HTTPException` (429, 5xx, Budget) oder jeder anderen Exception, und wenn nach dem Clamp vom Modell nichts übrig bleibt.
+  - Jeder Fallback wird mit `genai_log.log_fallback` geloggt (`reason: "fallback (<grund>): ..."`) und erscheint so im Overlay.
+  - Generationszähler: `set_wanted_level` 0 mit `source: "rules"` verwirft laufende Entscheidungen.
+  - `AgentSpec` hat zusätzlich zum Vertrag `snapshot`, `trigger_filter` und `on_sent` (additiv).
+- Agent und Modell: keine eigenen; Schlüssel `AGENT_DEBOUNCE_S`, `AGENT_DEADLINE_MS`, `AGENTS_MODE`.
 
 ### Polizei-Dispatcher (Scheibe Polizei)
-_noch leer_
+- Zweck: Gemini-Agent, der Fahndungsstufe, Einheiten, Taktik und Funk festlegt. Clientseitig fährt `police.js` die Autos.
+- Use-Cases: Schießerei → Agent eskaliert, schickt Einheiten an echte Orte, funkt. Ohne Gemini greift ein deterministischer Fallback.
+- Dateien: `agents/police.py`, `frontend/src/features/police.js`, `tests/test_police.py`
+- Agent: ein Request pro Zyklus, `gemini.agenerate(..., agent="police", attempts=AGENT_ATTEMPTS, timeout_ms=AGENT_DEADLINE_MS, use_fallback_model=False)`, Function Calling `ANY`, `thinking_level` = `GEMINI_THINKING_LEVEL`. Kein Verlauf: das Gedächtnis (5 Zeilen) steht im Snapshot.
+  - Tools (alle mit Pflichtfeld `reason`): `set_wanted_level(level)`, `spawn_units(target_units, unit_type patrol|swat, tactic, near_place_id?)`, `radio_message(text)`.
+  - Trigger: `shot_fired`, `npc_killed`, `vehicle_stolen`, `zone_entered` nur ab Level 1. Mindestabstand `POLICE_MIN_INTERVAL_S`.
+- Clamps: pro Tool nur der erste Call, unbekannte Tools weg; Level in [Boden, `WANTED_MAX`] und höchstens ±`WANTED_MAX_STEP`, unverändert → weg; `count = min(target_units, POLICE_MAX_UNITS) − units_active`, ≤ 0 → weg, bei Level 0 keine Einheiten; ungültige Enums → `patrol`/`chase`; unbekannter Ort → `null`; Funk auf `RADIO_MAX_CHARS`, leer → weg.
+- Fallback: Level = max(aktuell, min(5, Boden + Tote der letzten 60 s)), Einheiten bis Level (ab 4 SWAT; Taktik chase ≤ 2, roadblock 3, surround ≥ 4), Funk aus 5 englischen Vorlagen mit dem Zonennamen. Deeskalation macht nur der Decay.
+- Client (`police.js`): `set_wanted_level` → `hud.setWanted`, bei 0 alle Autos weg. `spawn_units` → `count` Polizeiautos (höchstens 8 gleichzeitig) 120–200 m vom Spieler oder 10–80 m um `near_poi_id`, Toast. Blaulicht blinkt (`userData.lightbar`). Bewegung per Rapier-Kinematic-Character-Controller (ohne Schwerkraft). Taktiken: chase (auf den Spieler, Halt bei 7 m), roadblock (Straßenpunkt 60 m vor dem Spieler, quer stehen; ist der Spieler 140 m weg, wird daraus chase), surround (4 Punkte im Abstand 12 m). Tempo 9 + 3·Level m/s. Festgefahren (3 s) oder weiter als 420 m → neu auf eine Straße nahe am Spieler. Ziel `police`, hp 3, Wrack 8 s. `faction: "gang"` wird ignoriert.
+- Offene Punkte: Polizisten schießen nicht zurück und verhaften nicht; Autos fahren direkt aufs Ziel zu (kein Straßen-Routing), Gebäude umfahren sie nur per Slide.
 
 ### Gang-Boss (gestrichen)
 - Am 2026-11-14 gestrichen (erste Kürzung laut Plan). Es gibt kein `agents/gang.py`.

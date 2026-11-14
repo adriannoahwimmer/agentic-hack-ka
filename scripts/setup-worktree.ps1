@@ -28,11 +28,8 @@ $envSrc = Join-Path $main '.env'
 $envDst = Join-Path $wt '.env'
 if (-not (Test-Path $envSrc)) { throw ".env im Hauptordner fehlt." }
 Copy-Item $envSrc $envDst -Force
-$lines = Get-Content $envDst | Where-Object { $_ -notmatch '^(PORT|VITE_PORT|BACKEND_URL)=' }
-$lines += "PORT=$BackendPort"
-$lines += "VITE_PORT=$VitePort"
-$lines += "BACKEND_URL=http://localhost:$BackendPort"
-Set-Content $envDst $lines -Encoding utf8
+# Ports setzen: Array-sicher (auch bei einzeiliger .env) und ohne BOM.
+& (Join-Path $PSScriptRoot 'set-env-ports.ps1') -EnvFile $envDst -BackendPort $BackendPort -VitePort $VitePort
 
 # 4. Python-venv
 Push-Location $wt

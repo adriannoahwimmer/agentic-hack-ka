@@ -18,7 +18,8 @@ from dotenv import load_dotenv
 
 # override=False: echte Umgebung schlägt .env. Fehlt die Datei, passiert nichts.
 # Tests schalten das per PYTHON_DOTENV_DISABLED ab (tests/conftest.py).
-load_dotenv(Path(__file__).with_name(".env"))
+# utf-8-sig: eine BOM (z. B. von PowerShell 5.1 geschrieben) gehört nicht zum ersten Schlüssel.
+load_dotenv(Path(__file__).with_name(".env"), encoding="utf-8-sig")
 
 
 ROOT = Path(__file__).resolve().parent

@@ -1,14 +1,16 @@
 """Gemeinsame Fixtures. Tests rufen Gemini NIE live auf (Quota und Kosten).
 
-Autouse: echter Client blockiert, Backoff ohne Warten, GenAI-Log in tmp_path,
+Hermetisch: weder die lokale .env noch Variablen aus der Shell (z. B. DEBUG_ENDPOINTS=1
+in einem Worktree) beeinflussen config.py. Tests sehen immer die Defaults.
+Autouse: echter Client blockiert, Backoff ohne Warten, GenAI-Log in Temp-Datei,
 Budget frisch, AGENTS_MODE=offline, keine Log-Listener aus anderen Tests.
 """
 
-import os
+from tests.hermetic import clear_config_env
 
-# Tests sind hermetisch: die lokale .env (echter Key, Modell-Overrides) nie laden.
-# Muss vor `import main` stehen, weil config.py die .env beim Import lädt.
-os.environ["PYTHON_DOTENV_DISABLED"] = "1"
+# Die lokale .env nie laden und jede von config.py gelesene Variable entfernen.
+# Muss vor `import config`/`import main` stehen, weil config.py beim Import liest.
+clear_config_env()
 
 import pytest
 

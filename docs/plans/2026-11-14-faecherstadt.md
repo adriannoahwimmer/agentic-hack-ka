@@ -609,13 +609,13 @@ Kinematisches Arcade-Auto statt Rapier-Vehicle-Controller: Fahrradmodell, Charac
 
 ### Erfolgskriterien
 #### Automatisch
-- [ ] `scripts\check.ps1` grün, einschließlich `tests/test_bake_osm.py` und Frontend-Build
-- [ ] `python scripts/bake_osm.py` (offline) reproduziert die eingecheckten `city/*.json` byte-gleich
+- [x] `scripts\check.ps1` grün, einschließlich `tests/test_bake_osm.py` und Frontend-Build (auf main nach PR #7 geprüft)
+- [x] `python scripts/bake_osm.py` (offline) reproduziert die eingecheckten `city/*.json` byte-gleich (sha256 geprüft: 959 Gebäude, 1546 Straßen, 230 Flächen, zusammen 345 KB; `raw.json` 1,46 MB)
 #### Manuell
-- [ ] Stadt erkennbar: Schloss mit Fächerstraßen, Marktplatz, Kaiserstraße. Die Attribution ist sichtbar.
-- [ ] Laufen ohne Durchdringen von Gebäuden, Schießen trifft Fußgänger, `npc_killed` erscheint im Backend-Log (`AGENTS_MODE=offline`).
-- [ ] `/debug/action` mit `set_wanted_level` → Sterne im HUD.
-- [ ] Checkpoint 14:45: Spieler, Ballern, Events und `ctx` sind auf main gemergt.
+- [x] Stadt erkennbar: Schloss mit Fächerstraßen, Marktplatz, Kaiserstraße. Die Attribution ist sichtbar.
+- [x] Laufen ohne Durchdringen von Gebäuden, Schießen trifft Fußgänger, `npc_killed` erscheint im Backend-Log (`AGENTS_MODE=offline`).
+- [x] `/debug/action` mit `set_wanted_level` → Sterne im HUD.
+- [x] Checkpoint: Spieler, Ballern, Events und `ctx` sind auf main gemergt (PR #7, Merge-Commit `7157031`, W1 + W2 + Fußgänger aus W3).
 - [ ] Auto: einsteigen, fahren, Kollision mit Gebäude, aussteigen. `vehicle_stolen` kommt an.
 
 ---

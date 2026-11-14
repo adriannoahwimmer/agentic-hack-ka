@@ -264,13 +264,33 @@ _noch leer_
 - Im Vertrag bleiben `faction: "gang"`, `unit_type: "gang"`, `npc_kind: "gang"` und der POI-Tag `gang_turf` stehen (nur additiv ändern). Quest-Gegner sind `quest_target`.
 
 ### Quest-NPC (Scheibe Quest)
-_noch leer_
+- Zweck: Ein NPC vergibt per Gemini-Function-Calling eine Quest zu einem echten Ort. Ob das Ziel erreicht und die Quest erfüllt ist, entscheidet nur der Server per Position und Kills.
+- Use-Cases:
+  - Spieler steht unter 3 m beim NPC, drückt E → `POST /npc/talk`, Dialog mit Warteanzeige, das Spiel läuft weiter
+  - Neue Quest → `quest_update` (`active`) per WS: Objective, Lichtsäule am Ziel, Pfeil über dem Spieler
+  - `player_position` im POI-Radius → `target_reached` mit `spawn_targets = remaining = n`, der Client spawnt n Gegner (`quest_target`), sie laufen auf den Spieler zu und zeigen Mündungsfeuer ohne Schaden
+  - `npc_killed` mit passender `quest_id` → `remaining` sinkt (`spawn_targets` 0), bei 0 `completed` → Toast „Mission complete“
+  - Reload: `on_connect` schickt die aktive Quest, bei `target_reached` mit `spawn_targets = remaining`
+  - Gemini offline, Budget leer, Fehler, Deadline oder kein brauchbares Ergebnis → Fallback-Quest (zufälliger `mission`-POI außerhalb der aktuellen Zone), HTTP 200 mit `fallback: true`, Logzeile `kind: "fallback"`
+  - Läuft schon eine Quest, erinnert der NPC daran (keine zweite Quest)
+- Dateien: `quests.py` (QuestBook, Handler, Snapshot-Provider `quest`, `fallback_quest`), `agents/quest.py` (Router, Tool-Loop, Fallback), `data/npcs.json` (Karl the Fixer am Schlossplatz, nahe Spawn), `frontend/src/features/npc.js`, `frontend/src/features/quest.js`, Tests `tests/test_quests.py`, `tests/test_quest_agent.py`
+- Schnittstellen: `POST /npc/talk` (Vertrag), Aktion `quest_update`, Events `player_position` und `npc_killed`, Snapshot-Extra `quest = {title, poi_id, status}`
+- Agent und Modell: `GEMINI_MODEL_QUEST`, Tools `lookup_place(place_id, reason)` und `assign_quest(place_id, title, objective, enemies, npc_line, reason)`; `place_id` ist ein Enum der `mission`-POIs, falsche IDs kommen als `{"error": ...}` zurück und das Modell wählt neu. `assign_quest` beendet den Loop (typisch 2 Requests, höchstens `QUEST_MAX_STEPS`). Pro Request `AGENT_DEADLINE_MS`, gesamt `QUEST_DEADLINE_MS` (`asyncio.wait_for`), `use_fallback_model=False`. Gedächtnis: letzte 6 Sätze pro NPC (im Prozess).
+- Offene Punkte:
+  - Spieler kann noch keinen freien Text eingeben (erstes Gespräch „Got any work for me?“, danach leer).
+  - Live-Lauf steht aus. Der Q0-429 betraf nur `google_maps` (auf dem Projekt gesperrt), normale Calls laufen (`agent_docs/gemini_api.md`).
 
 ### Maps-Fakten (Scheibe Quest)
-_noch leer_
+- **Gestrichen** (2026-11-14, Kürzung 2). Der Q0-Live-Check (1 Request, `gemini-3.5-flash-lite` mit `google_maps`) lieferte 429 „quota exceeded“; 429 wird nie wiederholt. Ursache: Maps Grounding ist auf dem Projekt gesperrt (nur das Tool `google_maps`, kein Spend-Cap).
+- Stattdessen liefert `lookup_place` die `description` aus `data/pois.json`. `sources` in `/npc/talk` bleibt leer, die Quellenzeile im Dialog (`hud.showDialog`) ist vorbereitet und erscheint, sobald `sources` gefüllt ist.
+- Kein `maps_facts.py`, kein `scripts/prewarm.py`; `MAPS_CACHE_PATH` und `GEMINI_MODEL_MAPS` bleiben in `config.py` (Vertrag nur additiv).
 
 ### Polizeifunk-TTS (Scheibe Quest)
-_noch leer_
+- **Gemini-TTS gestrichen** (2026-11-14, Kürzung 1). Der Q0-Live-Check (1 Request, `gemini-3.8-flash-lite-tts`) lieferte 400 „Unknown name speechConfig at generation_config“.
+- Zweck jetzt: Funksprüche des Dispatchers hörbar machen, ohne Server-Audio.
+- Use-Cases: `radio_message` → sofort `hud.subtitle("Dispatch: …")`, dann `speechSynthesis` (en-US, etwas tiefer und schneller) mit kurzem Funkrauschen (WebAudio, Bandpass) davor und danach. Mehrere Funksprüche stellen sich in die Warteschlange des Browsers.
+- Dateien: `frontend/src/features/radio.js`. Kein `tts.py`, kein `GET /tts/{key}.wav`; `tts_key` bleibt im Vertrag.
+- Offene Punkte: Das Rauschen braucht eine Nutzergeste (Autoplay-Regel), vorher spricht nur die Stimme.
 
 ### Agent-Log-Overlay (Phase 4)
 _noch leer_

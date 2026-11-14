@@ -815,10 +815,12 @@ In der globalen Reihenfolge:
 1. **TTS** streichen: `tts.py` entfällt, `radio.js` nutzt nur `speechSynthesis`.
 2. **Maps Grounding** streichen: `maps_facts.py` entfällt, `lookup_place` liefert `description` aus `pois.json`, keine Quellenzeile.
 
+**Stand 15:30:** Beide Kürzungen gezogen. Q0 ergab TTS 400 (`speechConfig` unbekannt) und Maps 429 (quota exceeded), Details in `agent_docs/gemini_api.md`.
+
 ### Erfolgskriterien
 #### Automatisch
-- [ ] `scripts\check.ps1` grün, einschließlich `test_quests.py`, `test_quest_agent.py`, `test_maps_facts.py` und `test_tts.py`
-- [ ] Test belegt: `/npc/talk` liefert bei jedem Gemini-Fehler HTTP 200 mit `fallback: true`
+- [x] `scripts\check.ps1` grün, einschließlich `test_quests.py`, `test_quest_agent.py` (`test_maps_facts.py` und `test_tts.py` entfallen mit den Kürzungen 1 und 2)
+- [x] Test belegt: `/npc/talk` liefert bei jedem Gemini-Fehler HTTP 200 mit `fallback: true`
 #### Manuell
 - [ ] Q0 dokumentiert: TTS-Modell aufrufbar ja/nein, MIME-Typ, Latenz. Maps-Quellenpfad.
 - [ ] Offline: NPC gibt eine Fallback-Quest, Marker erscheint, Ankunft spawnt Gegner, nach dem Erschießen ist die Quest erfüllt.

@@ -107,6 +107,18 @@ Gemessen mit `/agent` über den echten Codepfad und einer calculator-Frage. Die 
 - Hydrogen funktioniert über `generate_content` mit `thinking_level=low` und Function Calling. Die Latenz lag zum Testzeitpunkt aber bei 30 bis 90 s pro Schritt. Mit 30 s Timeout landet dann fast jeder Request nach etwa 30 s beim Fallback.
 - `gemini-3.5-flash-lite` akzeptiert `thinking_level=low` und macht Function Calling korrekt. Es war in beiden Läufen schnell.
 
+## TTS und Maps Grounding: Q0-Live-Checks (2026-11-14, ca. 15:18 Uhr)
+Je genau 1 Request über `gemini.generate` (`attempts=1`, ohne Fallback-Modell), SDK-Default `v1`.
+
+| Check | Aufruf | Ergebnis |
+|---|---|---|
+| TTS | `GEMINI_MODEL_TTS=gemini-3.8-flash-lite-tts`, `response_modalities=["AUDIO"]`, `speech_config.voice_config.prebuilt_voice_config(voice_name="Orus")` | **400** nach 2,2 s: `Invalid JSON payload received. Unknown name "speechConfig" at 'generation_config': Cannot find field.` Kein MIME-Typ, keine Latenz fürs Audio. |
+| Maps | `GEMINI_MODEL_MAPS=gemini-3.5-flash-lite`, `tools=[Tool(google_maps=GoogleMaps())]`, Frage zum Schloss | **429** nach 4,0 s: „You exceeded your current quota“. Quellenpfad (`candidates[0].grounding_metadata.grounding_chunks[].maps`) damit nicht bestätigt. |
+
+- Folge: Beide Kürzungen gezogen (Design.md, „Maps-Fakten“ und „Polizeifunk-TTS“). Funk spricht der Browser (`speechSynthesis`), `lookup_place` nutzt die POI-Beschreibung.
+- TTS-Vermutung (nicht geprüft): `speechConfig` gibt es in `generation_config` nur unter `v1beta` oder TTS läuft nur über die Interactions API. Ein zweiter Versuch hätte das Request-Budget der Scheibe überschritten.
+- **429 geklärt (2026-11-14):** Der 429 betraf nur das Tool `google_maps`. Maps Grounding ist auf dem Projekt gesperrt. Es war kein Spend-Cap, normale Calls (Polizei, Quest-NPC) laufen. Ein 429 mit `google_maps` heißt hier also nicht „Budget leer“.
+
 ## Decisions API (`gemini-decision-1`)
 Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem Hackathon-Key und google-genai 3.3.0.
 

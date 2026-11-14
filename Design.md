@@ -191,13 +191,14 @@ Vorlage für einen neuen Abschnitt:
   - Spieler läuft (WASD, Shift sprintet) mit Third-Person-Kamera (Maus-Orbit im Pointer-Lock, Kamera weicht Wänden aus) und kann nicht durch Gebäude gehen.
   - Linksklick schießt (1 = Pistole, 2 = SMG mit Dauerfeuer). Gebäude blockieren Schüsse.
   - Fußgänger laufen auf Straßen, fliehen bei Schüssen und sind Ziele (`civilian`, hp 1).
+  - Auto klauen und fahren: F steigt in ein geparktes Auto (≤ 4 m) ein und aus. W/S Gas, Bremse, rückwärts, A/D lenken, Leertaste Handbremse, R aufrichten (automatisch nach 2 s auf dem Dach). Ab 4 m/s überfährt das Auto Fußgänger (`npc_killed`).
   - Feature-Scheiben docken über `init(ctx)` an (Polizei, Quest, Overlay).
 - Dateien (`frontend/src/core/`):
   - `index.js`: baut `ctx`, Reihenfolge pro Frame: Physik (fester Schritt) → Spieler/Kamera → Kampf/Events → Fußgänger → `ctx.onUpdate` → Rendern
-  - `renderer.js` (Szene, Licht, Nebel), `physics.js` (Rapier, 1/60 s, `fixed(fn)` vor jedem Schritt), `input.js`, `player.js`, `combat.js`, `models.js`, `hud.js`, `attribution.js`, `world.js`, `city.js`, `pedestrians.js`
+  - `renderer.js` (Szene, Licht, Nebel), `physics.js` (Rapier, 1/60 s, `fixed(fn)` vor jedem Schritt), `input.js`, `player.js`, `combat.js`, `models.js`, `hud.js`, `attribution.js`, `world.js`, `city.js`, `pedestrians.js`, `vehicle.js` (Rapier `DynamicRayCastVehicleController`, 8 geparkte Zivilautos, Verfolgerkamera)
 - Schnittstellen:
   - Empfängt `set_wanted_level` und zeigt die Sterne im HUD (`police.js` darf zusätzlich reagieren, `setWanted` ist idempotent). `error` vom Server landet als Warnung in der Konsole.
-  - Sendet alle 5 Events: `player_position` (gedrosselt 2 Hz), `shot_fired` (pro 500 ms gebündelt), `npc_killed` (nur combat), `zone_entered` (`previous_zone_id` = letzte Zone, in der der Spieler war, sonst null), `vehicle_stolen` (Fahrzeuge, W3).
+  - Sendet alle 5 Events: `player_position` (gedrosselt 2 Hz), `shot_fired` (pro 500 ms gebündelt), `npc_killed` (nur combat), `zone_entered` (`previous_zone_id` = letzte Zone, in der der Spieler war, sonst null), `vehicle_stolen` (beim ersten Einsteigen pro Auto, `vehicle_kind` `civilian`).
   - `heading`: Rotation um y; Blickrichtung (−sin h, −cos h) in (x, z), also h = 0 → Norden. Modelle schauen nach −z.
   - Zusätze zu `ctx` (additiv, Stand W2):
     - `ctx.combat.onShot(fn({x, z, weapon})) -> off`: lokaler Beobachter für jeden Schuss (z. B. Gegner reagieren lassen).
@@ -209,7 +210,7 @@ Vorlage für einen neuen Abschnitt:
   - Debug: `/play/?view=top` zeigt die Stadt von oben.
 - Agent und Modell: keine (0 Gemini-Requests).
 - Offene Punkte:
-  - Fahrzeuge (W3, `core/vehicle.js`) folgen, `ctx.player.inVehicle()` ist bis dahin immer false.
+  - Fahrzeuge: Vorzeichen per Probe ermittelt. `currentVehicleSpeed() < 0` heißt vorwärts (−z), positive Lenkung dreht nach links. Vorwärtsachse ist z (`setIndexForwardAxis = 2`). Polizeiautos der Feature-Scheibe sind davon unabhängig (kinematisch).
   - Der Spieler schwebt 6 cm über dem Boden und wird nur horizontal kollidiert. Mit Schwerkraft sank die Kapsel in den Boden-Collider und blieb hängen. Die Stadt ist flach, also gibt es keine Stufen.
   - Bundle ca. 5 MB (Rapier-WASM inline). Lokal unkritisch, für Codesphere prüfen.
 

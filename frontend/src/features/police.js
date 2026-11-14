@@ -1,6 +1,7 @@
 /**
  * Polizei im Client: Fahndungssterne, Streifenwagen mit Blaulicht und Verfolgung (Scheibe Polizei).
  * Blaulicht: rote und blaue Dach-Segmente (MeshBasicMaterial, keine PointLights) blinken abwechselnd.
+ * Sirene: Web-Audio-Heulton (audio/siren.js), laut nach Distanz zum nächsten Auto, aus bei Level 0.
  *
  * Zweck: setzt die Server-Aktionen `set_wanted_level` und `spawn_units` (faction "police")
  * im Spiel um. Der Server (game_state, Dispatcher-Agent oder Fallback) entscheidet nur
@@ -14,6 +15,7 @@
  * Bewegung: Rapier-Kinematic-Character-Controller gegen Gebäude (ctx.physics), ohne Schwerkraft.
  * Steckt ein Auto fest oder ist es zu weit weg, wird es auf einen Straßenpunkt nahe am Spieler gesetzt.
  */
+import { createSiren } from '../audio/siren.js';
 
 const MAX_UNITS = 8;
 const SPAWN_MIN = 120;
@@ -54,6 +56,7 @@ export function init(ctx) {
   let level = 0;
   let serial = 0;
   let blink = 0;
+  const siren = createSiren();
 
   /** POI zur ID (ctx.world.poi, falls vorhanden). */
   const poiById = (id) => (id ? (world.poi?.(id) ?? world.pois.find((p) => p.id === id)) : null);
@@ -234,10 +237,14 @@ export function init(ctx) {
   ctx.onUpdate((dt) => {
     blink += dt;
     const on = Math.floor(blink * BLINK_HZ) % 2 === 0;
+    const p = player.position();
+    let nearest = Infinity;
     for (const u of units.values()) {
       drive(u, dt);
+      nearest = Math.min(nearest, Math.hypot(p.x - u.pos.x, p.z - u.pos.z));
       models.setLightbar(u.obj, u.index % 2 ? on : !on); // rot/blau im Wechsel, jedes zweite Auto gegenläufig
     }
+    siren.update(level, nearest);
     for (let i = wrecks.length - 1; i >= 0; i--) {
       wrecks[i].ttl -= dt;
       if (wrecks[i].ttl <= 0) { scene.remove(wrecks[i].obj); wrecks.splice(i, 1); }

@@ -140,7 +140,9 @@ TTS_VOICE = _env("TTS_VOICE", "Orus")  # Prebuilt-Stimme für den Polizeifunk ("
 AGENT_DEBOUNCE_S = max(5.0, _env_number("AGENT_DEBOUNCE_S", 5.0, float))
 POLICE_MIN_INTERVAL_S = max(1.0, _env_number("POLICE_MIN_INTERVAL_S", 8.0, float))
 # Deadline pro Agent-Zyklus, danach greift der Fallback. Im Spiel kein Backoff.
-AGENT_DEADLINE_MS = max(500, _env_number("AGENT_DEADLINE_MS", 6000))
+# 10 s ist das Minimum der API für die Server-Deadline (Live-Check 2026-11-14:
+# 6 s -> 400 "Minimum allowed deadline is 10s"). Kleinere Werte erzwingen den Fallback.
+AGENT_DEADLINE_MS = max(500, _env_number("AGENT_DEADLINE_MS", 10_000))
 AGENT_ATTEMPTS = max(1, _env_number("AGENT_ATTEMPTS", 1))  # Versuche pro Modell
 
 # --- Fahndung und Clamps (Scheibe 2: Polizei) ---------------------------------

@@ -13,6 +13,7 @@ Entwürfe (decide/fallback) sind Envelopes mit Roh-Argumenten; erst clamp() baut
 gültige Vertrags-Payloads (spawn_units.count = target_units - units_active).
 """
 
+import asyncio
 import itertools
 import logging
 from collections import deque
@@ -188,6 +189,8 @@ def fallback(snapshot: AgentSnapshot) -> list[Envelope]:
     floor = _floor(snapshot)
     deaths = snapshot.counts_60s.get("npc_killed", 0)
     level = max(snapshot.wanted_level, min(config.WANTED_MAX, floor + deaths))
+    # Schrittgrenze schon hier, damit Einheiten und Taktik zum gesendeten Level passen
+    level = min(level, snapshot.wanted_level + config.WANTED_MAX_STEP)
     if level <= 0:
         return []
     zone = snapshot.player.zone_id if snapshot.player else None
@@ -345,3 +348,16 @@ def register(hub: Hub) -> None:
     """Feature-Einstieg: Gedächtnis leeren, Dispatcher beim Runner anmelden."""
     MEMORY.clear()
     runner.register_agent(spec(), hub)
+
+
+async def startup() -> None:
+    """Lifespan: im Live-Modus den Gemini-Client vorwärmen (kalt ca. 3 s, kein Request).
+
+    Sonst fällt die Client-Erzeugung in den ersten Zyklus und frisst dessen Deadline.
+    """
+    if not gemini.live_enabled():
+        return
+    try:
+        await asyncio.to_thread(gemini.get_client)
+    except Exception:  # ohne Client greift ohnehin der Fallback
+        log.exception("Gemini-Client nicht vorwärmbar")

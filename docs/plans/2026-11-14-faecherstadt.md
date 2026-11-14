@@ -710,8 +710,8 @@ Gang-Boss (`agents/gang.py`) streichen. Das ist die erste Kürzung insgesamt. **
 
 ### Erfolgskriterien
 #### Automatisch
-- [ ] `scripts\check.ps1` grün, einschließlich `test_game_state.py`, `test_runner.py` und `test_police.py`
-- [ ] Test belegt: maximal 1 Gemini-Request pro Polizei-Zyklus, 0 Requests bei `AGENTS_MODE=offline`
+- [x] `scripts\check.ps1` grün, einschließlich `test_game_state.py`, `test_runner.py` und `test_police.py`
+- [x] Test belegt: maximal 1 Gemini-Request pro Polizei-Zyklus, 0 Requests bei `AGENTS_MODE=offline`
 #### Manuell
 - [ ] Offline: schießen → sofort 1 Stern. Nach ca. 5 s Fallback-Einheiten und Funk-Untertitel, im Overlay bzw. in der Konsole mit `FALLBACK`.
 - [ ] Live (P4): Agent setzt Level und Einheiten passend zur Szene. Antwort unter 2 s, keine hängende Demo bei künstlich niedriger Deadline (`AGENT_DEADLINE_MS=1`).

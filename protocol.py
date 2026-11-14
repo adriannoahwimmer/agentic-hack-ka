@@ -115,12 +115,34 @@ class ZoneEntered(_Tolerant):
     previous_zone_id: ZoneId = None
 
 
+class PlayerRadio(_Tolerant):
+    """Funkspruch des Spielers an die Polizei: flehen (plead) oder provozieren (taunt)."""
+
+    tone: Literal["plead", "taunt"]
+    text: str = Field(default="", max_length=config.PLAYER_RADIO_MAX_CHARS)
+
+
+class PoliceHit(_Tolerant):
+    """Der Spieler hat einen Polizisten zu Fuß getroffen (zählt als Delikt)."""
+
+    unit_id: str = Field(default="", max_length=60)
+
+
+class PoliceKilled(_Tolerant):
+    """Der Spieler hat einen Polizisten zu Fuß getötet (zählt als Delikt)."""
+
+    unit_id: str = Field(default="", max_length=60)
+
+
 EVENT_MODELS: dict[str, type[BaseModel]] = {
     "player_position": PlayerPosition,
     "shot_fired": ShotFired,
     "npc_killed": NpcKilled,
     "vehicle_stolen": VehicleStolen,
     "zone_entered": ZoneEntered,
+    "player_radio": PlayerRadio,
+    "police_hit": PoliceHit,
+    "police_killed": PoliceKilled,
 }
 
 
@@ -180,7 +202,9 @@ class SpawnUnits(_Strict):
     wave_id: str = Field(min_length=1, max_length=40)
     faction: Literal["police", "gang"]
     count: int = Field(ge=1, le=config.POLICE_MAX_UNITS)
-    unit_type: Literal["patrol", "swat", "gang"]
+    unit_type: Literal[
+        "patrol", "swat", "gang", "foot", "tank"
+    ]  # patrol = Streifenwagen
     tactic: Literal["chase", "roadblock", "surround"]
     near_poi_id: str | None = None
 

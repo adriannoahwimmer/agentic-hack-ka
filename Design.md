@@ -69,12 +69,15 @@ Verbindliche Schnittstellen zwischen Browser, Server und Agenten. Code: `protoco
 | `npc_killed` | `npc_id: str, npc_kind: "civilian"\|"police"\|"gang"\|"quest_target", x, z, zone_id, quest_id: str\|null` | sendet nur `core/combat` |
 | `vehicle_stolen` | `vehicle_id: str, vehicle_kind: "civilian"\|"police", x, z, zone_id` | |
 | `zone_entered` | `zone_id: str, previous_zone_id: str\|null` | Zone = POI, in dessen `radius` der Spieler steht |
+| `player_radio` | `tone: "plead"\|"taunt", text: str ≤120` | Spieler funkt die Polizei an (flehen/provozieren); sofortiger Dispatcher-Zyklus, Cooldown `POLICE_RADIO_COOLDOWN_S` (8 s) |
+| `police_hit` | `unit_id: str` | Polizist zu Fuß vom Spieler getroffen, Delikt (Boden min 3) |
+| `police_killed` | `unit_id: str` | Polizist zu Fuß vom Spieler getötet, Delikt (Boden min 4, zählt für `police_kills`) |
 
 ### Aktionen: Server -> Client
 | type | payload | Hinweise |
 |---|---|---|
 | `set_wanted_level` | `level: int 0–WANTED_MAX (5), source: "rules"\|"agent"\|"fallback", reason: str ≤160` | Level 0: Client entfernt alle Polizei-Einheiten |
-| `spawn_units` | `wave_id: str, faction: "police"\|"gang", count: int 1–POLICE_MAX_UNITS (6), unit_type: "patrol"\|"swat"\|"gang", tactic: "chase"\|"roadblock"\|"surround", near_poi_id: str\|null` | null = in Spielernähe, 120–200 m entfernt |
+| `spawn_units` | `wave_id: str, faction: "police"\|"gang", count: int 1–POLICE_MAX_UNITS (6), unit_type: "patrol"\|"swat"\|"gang"\|"foot"\|"tank", tactic: "chase"\|"roadblock"\|"surround", near_poi_id: str\|null` | null = in Spielernähe, 120–200 m entfernt; `patrol` = Streifenwagen, `foot` = Fußstreife, `tank` = Panzer |
 | `radio_message` | `id: str, speaker: str, text: str ≤RADIO_MAX_CHARS (160), voice: str, tts_key: str (16 hex)` | nur über `protocol.make_radio_message()` bauen; Audio unter `GET /tts/{tts_key}.wav` |
 | `quest_update` | `quest_id, status: "active"\|"target_reached"\|"completed", title ≤80, objective ≤200, poi_id, target: {x, z, radius}, spawn_targets: int 0–5, remaining: int 0–5` | bei `target_reached` spawnt der Client `spawn_targets` Gegner |
 | `agent_log` | Logzeile ohne `prompt` und `config` (siehe JSONL-Log) | fürs Overlay |
@@ -257,8 +260,8 @@ Vorlage für einen neuen Abschnitt:
 ### Spielzustand (Scheibe Polizei)
 - Zweck: Wahrheit über Fahndung, Einheiten, Spielerposition und jüngste Events. Baut die Agent-Snapshots.
 - Use-Cases:
-  - Regel-Boden: `shot_fired`, `npc_killed` (außer `gang`/`quest_target`) und `vehicle_stolen` heben Level 0 sofort auf 1 (`source: "rules"`) und setzen `last_crime`.
-  - Decay: Nach `WANTED_DECAY_S` ohne Verbrechen (und seit dem letzten Decay) sinkt das Level um 1 (Task, Tick 1 s).
+  - Wanted-Regeln (Regel-Boden `floor`, höchstens 4): Schuss min 1; Fahrzeug gestohlen +1 (min 1); Zivilist getötet min 2, jeder weitere in 60 s +1; Polizist getroffen (`police_hit`) min 3; Polizist getötet (`police_killed`, `npc_killed` police) min 4. Liegt der Boden über dem Level, hebt der Server sofort an (`source: "rules"`). Jedes Delikt setzt `last_crime`.
+  - Decay: Nach `WANTED_DECAY_S` (30 s) ohne Delikt (und seit dem letzten Decay) und ohne Einheit < 40 m (`nearest_unit_m`; unbekannt → nur Zeitregel) sinkt das Level um 1 und der Boden mit (Task, Tick 1 s). Level 0 setzt Boden, `police_kills` und Einheiten zurück.
   - Einheitenbilanz: Summe aus `spawn_units` (police) minus getötete `police`, gedeckelt auf `POLICE_MAX_UNITS`, bei Level 0 gleich 0.
   - Reload: `on_connect` schickt das aktuelle `set_wanted_level` (`reason: "State sync"`).
 - Dateien: `game_state.py`, `tests/test_game_state.py`
@@ -266,7 +269,7 @@ Vorlage für einen neuen Abschnitt:
   - Das Level ändert sich nur über ausgehende `set_wanted_level`-Aktionen (`on_action`), egal ob Regeln, Agent oder Fallback. Eine Quelle der Wahrheit.
   - Ringpuffer: letzte 50 Events bzw. 120 s; `player_position` wird nur als Zustand gemerkt, nicht gepuffert.
   - `snapshot(agent, memory)` → `AgentSnapshot` (12 Events, 5 Gedächtniszeilen, alle POIs als `places`, `extras` vom Hub). Test: unter 2 KB.
-  - Snapshot-Provider `wanted`: `{level, floor, crime_s_ago}`. `floor` ist 1, solange das letzte Verbrechen unter `WANTED_DECAY_S` her ist.
+  - Snapshot-Provider `wanted`: `{level, floor, crime_s_ago, police_kills, units_by_type}`.
   - `GET /debug/state` (nur `DEBUG_ENDPOINTS=1`).
 - Agent und Modell: keine (0 Requests).
 
@@ -286,11 +289,13 @@ Vorlage für einen neuen Abschnitt:
 - Use-Cases: Schießerei → Agent eskaliert, schickt Einheiten an echte Orte, funkt. Ohne Gemini greift ein deterministischer Fallback.
 - Dateien: `agents/police.py`, `frontend/src/features/police.js`, `frontend/src/audio/siren.js`, `tests/test_police.py`
 - Agent: ein Request pro Zyklus, `gemini.agenerate(..., agent="police", attempts=AGENT_ATTEMPTS, timeout_ms=AGENT_DEADLINE_MS, use_fallback_model=False)`, Function Calling `ANY`, `thinking_level` = `GEMINI_THINKING_LEVEL`. Kein Verlauf: das Gedächtnis (5 Zeilen) steht im Snapshot.
-  - Tools (alle mit Pflichtfeld `reason`): `set_wanted_level(level)`, `spawn_units(target_units, unit_type patrol|swat, tactic, near_place_id?)`, `radio_message(text)`.
+  - Tools (alle mit Pflichtfeld `reason`): `set_wanted_level(level)`, `spawn_units(count, unit_type foot|patrol|swat|tank, tactic, near_place_id?)` (ein Call je unit_type), `radio_message(text)`.
+  - Einheiten-Tabelle (Systemprompt und Clamp, gesamt max. 6): 1★ 1 foot · 2★ 1 foot + 1 patrol · 3★ 2 foot + 2 patrol · 4★ 2 foot + 4 patrol · 5★ 2 foot + 3 patrol + 1 tank. `swat` zählt wie `patrol`.
+  - `player_radio`: eigener Hub-Handler, sofort ein Zyklus ohne Debounce (eigener Task), danach `POLICE_RADIO_COOLDOWN_S` Sperre (Events darin ignoriert). Der Funkspruch steht als `extras.player_radio` im Snapshot. plead: −1 nur wenn letztes Delikt > 20 s und nie unter Boden, sonst Ablehnung; taunt: +1 und mehr Einheiten (Taunt bei 4 erlaubt 5). Die Leitstelle antwortet immer per `radio_message`; fehlt sie, ergänzt der Server eine deutsche Standardantwort.
   - Funk: kurze deutsche Polizeifunk-Sätze (max. 15 Wörter) mit dem deutschen Karlsruher Ortsnamen aus `places` (z. B. Marktplatz, Schlossplatz, Kronenplatz).
-  - Trigger: `shot_fired`, `npc_killed`, `vehicle_stolen`, `zone_entered` nur ab Level 1. Mindestabstand `POLICE_MIN_INTERVAL_S`.
-- Clamps: pro Tool nur der erste Call, unbekannte Tools weg; Level in [Boden, `WANTED_MAX`] und höchstens ±`WANTED_MAX_STEP`, unverändert → weg; `count = min(target_units, POLICE_MAX_UNITS) − units_active`, ≤ 0 → weg, bei Level 0 keine Einheiten; ungültige Enums → `patrol`/`chase`; unbekannter Ort → `null`; Funk auf `RADIO_MAX_CHARS`, leer → weg.
-- Fallback: Level = max(aktuell, min(5, Boden + Tote der letzten 60 s)), Einheiten bis Level (ab 4 SWAT; Taktik chase ≤ 2, roadblock 3, surround ≥ 4), Funk aus 5 deutschen Vorlagen mit dem Zonennamen. Deeskalation macht nur der Decay.
+  - Trigger: `shot_fired`, `npc_killed`, `vehicle_stolen`, `police_hit`, `police_killed`, `zone_entered` nur ab Level 1. Mindestabstand `POLICE_MIN_INTERVAL_S`.
+- Clamps: `set_wanted_level`/`radio_message` nur der erste Call, `spawn_units` einer je unit_type, unbekannte Tools weg; Level in [Boden, Boden+1] (5 nur bei `police_kills` ≥ 2 oder Taunt bei 4) und höchstens ±`WANTED_MAX_STEP`, Senkung nur auf plead (siehe oben), unverändert → weg; `count` je Typ höchstens Tabellen-Kontingent minus aktive Einheiten dieses Typs (und Platz bis `POLICE_MAX_UNITS`), ≤ 0 → weg, bei Level 0 keine Einheiten (Altform `target_units` = Gesamtzahl wird noch verstanden); ungültige Enums → `patrol`/`chase`; unbekannter Ort → `null`; Funk auf `RADIO_MAX_CHARS`, leer → weg (außer auf `player_radio`).
+- Fallback: Level = max(aktuell, Boden), bei Taunt +1 (Clamp); Einheiten nach der Tabelle, je unit_type ein `spawn_units` (Taktik chase ≤ 2, roadblock 3, surround ≥ 4); Funk aus 5 deutschen Vorlagen mit dem Zonennamen, auf `player_radio` deutsche Standardantwort (plead ohne Effekt). Deeskalation macht sonst nur der Decay.
 - Client (`police.js`): `set_wanted_level` → `hud.setWanted`, bei 0 alle Autos weg. `spawn_units` → `count` Polizeiautos (höchstens 8 gleichzeitig) 120–200 m vom Spieler oder 10–80 m um `near_poi_id`, Toast. Blaulicht: zwei Dach-Segmente mit `MeshBasicMaterial` (keine PointLights), rot und blau blinken abwechselnd mit 4 Hz über `ctx.models.setLightbar` (an = Farbe ×3 für Bloom, aus = ×0,12), jedes zweite Auto gegenläufig. Sirene (`frontend/src/audio/siren.js`, Web Audio, kein Asset): Sägezahn 600–1300 Hz per Sinus-LFO (Heulton, schneller mit dem Level), Tiefpass 2,2 kHz; Lautstärke voll bis 15 m, quadratisch aus bis 260 m vom nächsten Streifenwagen, stumm bei Level 0 oder ohne Einheiten; AudioContext erst nach der ersten Nutzergeste. Bewegung per Rapier-Kinematic-Character-Controller (ohne Schwerkraft). Taktiken: chase (auf den Spieler, Halt bei 7 m), roadblock (Straßenpunkt 60 m vor dem Spieler, quer stehen; ist der Spieler 140 m weg, wird daraus chase), surround (4 Punkte im Abstand 12 m). Tempo 9 + 3·Level m/s. Festgefahren (3 s) oder weiter als 420 m → neu auf eine Straße nahe am Spieler. Ziel `police`, hp 3, Wrack 8 s. `faction: "gang"` wird ignoriert.
 - Live-Check (2026-11-14, 4 Requests): `AGENT_DEADLINE_MS=6000` ergab 400 „Minimum allowed deadline is 10s“ (die Deadline geht als Server-Timeout mit). Behoben zentral in `gemini.py`: an Gemini gehen immer mindestens 10 s (`GEMINI_MIN_SERVER_DEADLINE_MS`), die Spiel-Deadline `AGENT_DEADLINE_MS` ist wieder 6 s und wird lokal durchgesetzt (`agenerate`, Runner). Danach 3 Szenen mit 1,2–4,3 s Latenz und passenden Calls: Marktplatz-Schießerei → Level 2; 3 tote Zivilisten → Level 3, 2 Streifen am Schlossplatz; Polizist tot und Streifenwagen gestohlen → Level 4, 3 SWAT am Kronenplatz, Funk „officer down“. Der Gemini-Client wird im Live-Modus beim Start vorgewärmt (`startup`, kalt ca. 3 s, kein Request).
 - Offene Punkte:
@@ -331,7 +336,23 @@ Vorlage für einen neuen Abschnitt:
 - Offene Punkte: Das Rauschen braucht eine Nutzergeste (Autoplay-Regel), vorher spricht nur die Stimme.
 
 ### Agent-Log-Overlay (Phase 4)
-_noch leer_
+- Dateien: `frontend/src/ui/agentOverlay.js` (eingehängt über `features/agentOverlay.js`).
+- Panel oben rechts, Taste **L** toggelt, standardmäßig an. Kopfzeile: POLICE DISPATCHER · KARL THE FIXER.
+- Liest WS `agent_log` und zeigt die letzten 5 Einträge: Agent-Name, Tool-Calls kompakt (`set_wanted_level 3`, `spawn_units 2× foot chase`, `radio_message: "…"`), "Warum: …" (reason), Modell + Latenz. Tags: FALLBACK (orange), ERROR (rot).
+- Spieler-Funksprüche kommen über das window-CustomEvent `player-radio` {tone, text} dazu (Eintrag "YOU").
+- Reines DOM, nur bei neuer Nachricht neu gebaut, `pointer-events: none`.
+
+### Spieler-Funk (Endspurt)
+- Dateien: `frontend/src/ui/radioButtons.js` (eingehängt über `features/radioButtons.js`); Server-Seite siehe Polizei-Dispatcher (`player_radio`).
+- Tasten **G** (plead, "Ich hab nichts gemacht!") und **T** (taunt, "Ihr kriegt mich nie!") plus zwei HUD-Buttons unten rechts. Je 4 deutsche Sätze, zufällig.
+- Sendet `player_radio` {tone, text}, zeigt den Satz als Untertitel und im Overlay. Gemeinsamer Cooldown 8 s (wie der Server), Buttons zeigen die Restzeit.
+
+### Fußstreife und Panzer (Endspurt)
+- Dateien: `frontend/src/police/footCop.js`, `frontend/src/police/tank.js`; Dispatch nach `unit_type` in `features/police.js`.
+- `foot`: blauer Polizist, steigt aus einem Streifenwagen < 20 m vom Spieler (Wagen hält 3 s) oder spawnt 35–50 m entfernt. Luftlinie, Halt in 12 m, Schuss alle 1,5 s (35 % Treffer, Mündungsfeuer, roter Bildschirmrand). Max. 3. Abschießbar (hp 2): erster Treffer `police_hit`, Tod `police_killed`.
+- `tank`: Streifenwagen-Box ×1,6, dunkelgrün mit Turm, 60 % Tempo, schießt nicht, fährt bis an den Spieler und schiebt (Rapier-Character-Controller mit Impulsen).
+- `core/combat.js`: Ziele können optional `onHit(hpLeft)` angeben.
+- Offen: Keine Einheiten-Positionen an den Server, deshalb greift die 40-m-Sperre beim Abklingen nicht (nur die Zeitregel). Keine Spieler-HP.
 
 ### Starter-Endpoints `/chat` und `/agent`
 - Zweck: Gemini-Setup (Key, Modelle, Retry und Fallback) ohne Spiel-Frontend prüfen und den Tool-Loop debuggen.

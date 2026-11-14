@@ -146,6 +146,7 @@ export function createCombat({ THREE, scene, camera, RAPIER, world, input, hud, 
     if (!t) return;
     t.hp -= amount;
     hud.hitMarker();
+    try { t.onHit?.(t.hp); } catch (err) { console.error(`[combat] onHit ${id}`, err); }
     if (t.hp > 0) return;
     targets.delete(id);
     t.obj.getWorldPosition(wp);
@@ -216,7 +217,7 @@ export function createCombat({ THREE, scene, camera, RAPIER, world, input, hud, 
      */
     addTarget(object3d, t) {
       object3d.userData.combatId = t.id;
-      targets.set(t.id, { obj: object3d, kind: t.kind, questId: t.questId ?? null, hp: t.hp ?? 1, onKilled: t.onKilled });
+      targets.set(t.id, { obj: object3d, kind: t.kind, questId: t.questId ?? null, hp: t.hp ?? 1, onKilled: t.onKilled, onHit: t.onHit });
     },
     /** Ziel austragen (ohne Event). */
     removeTarget(id) { targets.delete(id); },

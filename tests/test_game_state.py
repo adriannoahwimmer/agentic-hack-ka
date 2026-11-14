@@ -137,7 +137,7 @@ def test_snapshot_is_small_and_has_extras_and_places():
     text = snap.to_prompt()
     assert len(text.encode()) < 2048, len(text)
     assert len(snap.recent_events) == 12 and len(snap.memory) == 5
-    assert snap.extras["wanted"]["floor"] == 1
+    assert snap.extras["wanted"]["floor"] == game_state.FLOOR_MAX  # 60 Tote
     assert any(p.id == "marktplatz" for p in snap.places)
     assert snap.player.zone_id == "marktplatz"
 

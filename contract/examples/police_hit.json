@@ -1,0 +1,7 @@
+{
+  "type": "police_hit",
+  "ts": 1763125401123,
+  "payload": {
+    "unit_id": "foot-2"
+  }
+}

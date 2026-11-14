@@ -47,13 +47,14 @@ def test_clamp_level_step_and_floor():
             _snap(level=1),
         )
     )
-    assert out["set_wanted_level"]["level"] == 3
-    out = _by_type(
+    assert out["set_wanted_level"]["level"] == 2  # höchstens Boden + 1
+    # Senken ohne plead wird verworfen
+    assert (
         police.clamp(
             [_d("set_wanted_level", level=0, reason="r")], _snap(level=2, floor=1)
         )
+        == []
     )
-    assert out["set_wanted_level"]["level"] == 1  # Boden 1 bei frischem Verbrechen
     assert (
         police.clamp([_d("set_wanted_level", level=1, reason="r")], _snap(level=1))
         == []
@@ -65,7 +66,7 @@ def test_clamp_units_enums_places_and_radio():
         _d(
             "spawn_units",
             target_units=9,
-            unit_type="tank",
+            unit_type="rocket",
             tactic="nuke",
             near_place_id="mars",
             reason="r",
@@ -73,8 +74,8 @@ def test_clamp_units_enums_places_and_radio():
         _d("radio_message", text="   ", reason="r"),
         _d("teleport", x=1),
     ]
-    out = _by_type(police.clamp(drafts, _snap(units=0)))
-    assert out["spawn_units"]["count"] == config.POLICE_MAX_UNITS
+    out = _by_type(police.clamp(drafts, _snap(level=4, floor=4, units=0)))
+    assert out["spawn_units"]["count"] == 4  # patrol-Kontingent bei 4 Sternen
     assert (
         out["spawn_units"]["unit_type"] == "patrol"
         and out["spawn_units"]["tactic"] == "chase"
@@ -93,7 +94,7 @@ def test_clamp_units_enums_places_and_radio():
                     reason="r",
                 )
             ],
-            _snap(units=2),
+            _snap(level=4, floor=4, units=2),
         )
     )
     assert (
@@ -132,20 +133,19 @@ def test_clamp_keeps_only_first_call_per_tool():
 
 
 def test_fallback_is_deterministic_and_valid():
-    out = _by_type(
-        police.clamp(
-            police.fallback(_snap(level=1, deaths=2)), _snap(level=1, deaths=2)
-        )
-    )
+    snap = _snap(level=1, floor=2, deaths=2)
+    actions = police.clamp(police.fallback(snap), snap)
+    out = _by_type(actions)
     assert out["set_wanted_level"] == {
-        "level": 3,
+        "level": 2,
         "source": "fallback",
         "reason": out["set_wanted_level"]["reason"],
     }
-    assert (
-        out["spawn_units"]["count"] == 3
-        and out["spawn_units"]["near_poi_id"] == "marktplatz"
-    )
+    spawns = {
+        a.payload["unit_type"]: a.payload for a in actions if a.type == "spawn_units"
+    }
+    assert {k: v["count"] for k, v in spawns.items()} == {"foot": 1, "patrol": 1}
+    assert spawns["patrol"]["near_poi_id"] == "marktplatz"
     assert "Market Square" in out["radio_message"]["text"]
     assert police.fallback(_snap(level=0, floor=0)) == []
 
@@ -252,4 +252,4 @@ def test_e2e_npc_killed_leads_to_level_units_and_radio(police_app):
         for m in seen
         if m["type"] == "set_wanted_level"
     ]
-    assert levels == [(1, "rules"), (2, "fallback")]
+    assert levels == [(2, "rules")]  # Zivilist getötet: Boden 2 sofort

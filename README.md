@@ -11,8 +11,11 @@ Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe (2026-11-14).
 2. Steal a car (**F**) and drive to the target. The marker and the minimap show the way.
 3. When you arrive, the enemies show up ("Here they come!"). Shoot them.
 4. The shots raise your wanted level immediately (rule-based floor). After the event window, the dispatcher agent decides how far to escalate: stars, number of units, tactic (chase, roadblock, surround) and a radio message.
-5. Police cars with flashing red and blue light bars and wailing sirens spawn and chase you. The dispatcher's radio call is in German (Polizeifunk, with real Karlsruhe place names). It appears as a subtitle and is spoken by the browser with a German voice.
-6. Kill the last target and you get **Mission complete**.
+5. Police cars with flashing red and blue light bars and wailing sirens spawn and chase you. Officers on foot jump out of cars near you and open fire; at 5 stars a tank joins the chase. The dispatcher's radio call is in German (Polizeifunk, with real Karlsruhe place names). It appears as a subtitle and is spoken by the browser with a German voice.
+6. Talk back on the police radio: **G** pleads innocence, **T** taunts the cops. The dispatcher agent answers in German and may lower or raise your stars.
+7. Kill the last target and you get **Mission complete**.
+
+The **agent overlay** (top right, toggle with **L**) shows every agent decision live: tool calls, the reason, model and latency, scripted fallbacks and your own radio calls.
 
 ## Controls
 | Key | Action |
@@ -27,6 +30,9 @@ Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe (2026-11-14).
 | Space | Handbrake |
 | R | Put the car back on its wheels |
 | E | Talk to an NPC |
+| G | Police radio: plead ("Ich hab nichts gemacht!"), 8 s cooldown |
+| T | Police radio: taunt ("Ihr kriegt mich nie!"), 8 s cooldown |
+| L | Agent overlay on/off |
 | M | Minimap on/off |
 | Q | Cycle graphics quality |
 | P | Post-processing on/off (remembered in the browser) |
@@ -82,7 +88,7 @@ Browser (Three.js + Rapier, Vite)              FastAPI :3000
 - **Quest giver.** A short tool loop: `lookup_place`, then `assign_quest`. It may only choose places from `data/pois.json`. The server, not the model, decides when a quest is complete, from the player position and kill events.
 - **Never wait for the model.** Game agents use a local 6 s deadline (Gemini itself gets at least 10 s, its minimum) and no slow fallback model. On timeout, error, budget exhaustion or offline mode, scripted fallbacks take over.
 - **Model choice.** Heavier models were too slow for real-time gameplay; `gemini-3.5-flash-lite` was the fastest option that still makes reliable tool calls within our 6 s deadline. Heavier models can be set via `GEMINI_MODEL_AGENT`.
-- **Logging.** Every Gemini request goes to `logs/genai.jsonl` as one JSON line: agent, model, tool calls, reason, latency, without keys. Each line is also sent to the browser as `agent_log` and appears in the developer console (verbose level). There is no in-game overlay yet; for the demo video the log runs in a second terminal (`Get-Content logs\genai.jsonl -Wait -Tail 3`).
+- **Logging.** Every Gemini request goes to `logs/genai.jsonl` as one JSON line: agent, model, tool calls, reason, latency, without keys. Each line is also sent to the browser as `agent_log` and appears in the developer console (verbose level). The in-game agent overlay (top right, **L**) shows the last five entries.
 - **Map.** OSM data is baked once into compact JSON (`scripts/bake_osm.py`, 959 buildings, 1546 road segments, 230 areas) with a single projection (`geo.py`, origin at the palace). There are no map requests at runtime.
 
 ## Landmarks
@@ -126,11 +132,39 @@ All landmarks are a single mesh with vertex colours and one Lambert material (on
 **Prepared, not deployed**
 - Codesphere (`ci.yml`).
 
+## Wanted rules and police units
+The server enforces a deterministic **floor** for the wanted level; the dispatcher agent may only set the level between the floor and floor + 1 and must give a reason.
+
+| Crime | Floor |
+|---|---|
+| Shot fired | at least 1 star |
+| Car stolen | +1 star (at least 1) |
+| Civilian killed | at least 2 stars, +1 for each further one within 60 s |
+| Police officer hit | at least 3 stars |
+| Police officer killed | at least 4 stars |
+
+5 stars only come from the agent, on sustained escalation (2 or more officers killed, or a taunt at 4 stars). After 30 s without a new crime the level drops by one star every 30 s.
+
+Units per level (at most 6, enforced in the prompt and as a server-side clamp; the scripted fallback follows the same table):
+
+| Stars | Units |
+|---|---|
+| 1 | 1 officer on foot |
+| 2 | 1 on foot + 1 car |
+| 3 | 2 on foot + 2 cars |
+| 4 | 2 on foot + 4 cars |
+| 5 | 2 on foot + 3 cars + 1 tank |
+
+**Player radio** (`player_radio` event): a plea or taunt triggers a dispatcher call right away (8 s cooldown). A plea can take one star off, but only if the last crime was more than 20 s ago and never below the floor. A taunt may add a star and more units. The dispatcher always answers on the radio; without Gemini, a plea has no effect and a taunt adds one star.
+
+**Officers on foot** (`unit_type: "foot"`) walk straight at you, stop at 12 m and shoot every 1.5 s (at most 3 at once). Shooting one sends `police_hit` / `police_killed`. The **tank** (`unit_type: "tank"`, 5 stars) is a dark green, 1.6× police car with a turret; it is slower, does not shoot and pushes.
+
 ## Roadmap
 - **Google Photorealistic 3D Tiles** instead of extruded OSM blocks, using our own Google Maps Platform key.
 - **Maps Grounding** for real facts in quest dialogs. Implemented as a separate cached call, but blocked on this project (HTTP 429 for the `google_maps` tool); the quest giver currently uses the POI descriptions.
 - **Gemini TTS** (`gemini-3.8-flash-lite-tts`) for the police radio. The `generate_content` call on API version `v1` was rejected (400, `speechConfig` unknown); next try is `v1beta` or the Interactions API. Until then the browser speaks.
-- An in-game overlay for the agent log. The server already streams every log line as `agent_log`; today it only reaches the browser console.
+- Send police unit positions to the server so wanted-level decay also waits until no unit is within 40 m (today only the 30 s timer applies).
+- Player health, so officers on foot do real damage instead of a red screen flash.
 
 ## Repository map
 - `main.py`: app and feature loader

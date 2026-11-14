@@ -178,7 +178,7 @@ Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem H
 - Historie (Free Tier, 2026-11-13): `gemini-3.8-flash` hatte 20 Requests pro Tag. Retries auf 429 haben damals das Tageslimit aufgebraucht. Daher die Regel, 429 nie zu wiederholen.
 
 ## Testen ohne Live-Calls
-- `tests/conftest.py` setzt `PYTHON_DOTENV_DISABLED=1` vor `import main`. Tests laden die lokale `.env` also nie, weder den echten Key noch Overrides.
+- `tests/conftest.py` ruft vor `import main` `tests/hermetic.py:clear_config_env()` auf: `PYTHON_DOTENV_DISABLED=1`, und jede Variable, die `config.py` liest, wird aus der Prozessumgebung entfernt (Namen per Regex aus `config.py`). Weder die `.env` noch die Shell eines Worktrees (z. B. `DEBUG_ENDPOINTS=1`) beeinflussen Tests; Wächter: `tests/test_hermetic_env.py`. Tests, die einen anderen Wert brauchen, setzen ihn per `monkeypatch.setattr(config, ...)`.
 - Autouse-Fixtures:
   - `block_live_gemini` blockiert `genai.Client` und entfernt `GEMINI_API_KEY`.
   - `backoff_sleeps` ersetzt `gemini._sleep`, sodass Tests nicht warten. Die Fixture liefert die Liste der angefragten Wartezeiten.

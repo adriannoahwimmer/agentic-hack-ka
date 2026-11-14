@@ -56,7 +56,7 @@ export async function createCore({ net }) {
 
   const worldApi = createWorld({ roads: data.roads, bounds: null });
   const city = buildCity({ scene, RAPIER, world: physicsWorld, data, pois: worldApi.pois });
-  addLandmarks({ scene, data }); // Einhängepunkt Landmarks (frontend/src/landmarks/)
+  addLandmarks({ scene, data, hideBuilding: city.hideBuilding }); // Einhängepunkt Landmarks (frontend/src/landmarks/)
   worldApi.bounds = city.bounds;
   // Für Landmark-Modelle (frontend/src/landmarks/): OSM-Gebäude an ihrer Stelle ausblenden, Collider bleibt.
   worldApi.hideBuilding = city.hideBuilding;

@@ -74,42 +74,14 @@ export function frameOf(b, align) {
 }
 
 /**
- * Block eines Gebäudes im zusammengeführten Stadt-Mesh unsichtbar machen: alle Dreiecke,
- * deren drei Ecken im Grundriss-Rechteck liegen, werden auf einen Punkt unter dem Boden
- * gelegt. Der Collider (Trimesh) bleibt. Gibt die Zahl der ausgeblendeten Dreiecke zurück.
- * @param {THREE.Scene} scene
- * @param {{pts: number[][]}} b
- */
-export function hideCityBlock(scene, b) {
-  const mesh = scene.getObjectByName('city-buildings');
-  const pos = mesh?.geometry?.getAttribute('position');
-  if (!pos) return 0;
-  const m = 0.25;
-  const xs = b.pts.map((p) => p[0]);
-  const zs = b.pts.map((p) => p[1]);
-  const [x0, x1, z0, z1] = [Math.min(...xs) - m, Math.max(...xs) + m, Math.min(...zs) - m, Math.max(...zs) + m];
-  const inside = (i) => {
-    const x = pos.getX(i);
-    const z = pos.getZ(i);
-    return x >= x0 && x <= x1 && z >= z0 && z <= z1;
-  };
-  let hidden = 0;
-  for (let i = 0; i + 2 < pos.count; i += 3) {
-    if (inside(i) && inside(i + 1) && inside(i + 2)) {
-      for (let k = 0; k < 3; k++) pos.setXYZ(i + k, x0, -5, z0);
-      hidden++;
-    }
-  }
-  if (hidden > 0) pos.needsUpdate = true;
-  return hidden;
-}
-
-/**
  * Alle Landmarks bauen und als ein Mesh in die Szene setzen.
- * @param {{scene: THREE.Scene, data: {buildings: {id: string, h: number, pts: number[][]}[]}}} deps
+ * `hideBuilding` ist `ctx.world.hideBuilding` (core/city.js): blendet ein OSM-Gebäude im
+ * Stadt-Mesh aus, der Collider bleibt. Fehlt es oder schlägt es fehl, gibt es nur eine Warnung.
+ * @param {{scene: THREE.Scene, data: {buildings: {id: string, h: number, pts: number[][]}[]},
+ *   hideBuilding?: (osmRef: string) => boolean}} deps
  * @returns {THREE.Mesh | null}
  */
-export function addLandmarks({ scene, data }) {
+export function addLandmarks({ scene, data, hideBuilding }) {
   const geos = [];
   for (const lm of LANDMARKS) {
     try {
@@ -118,10 +90,11 @@ export function addLandmarks({ scene, data }) {
         console.warn(`[landmarks] ${lm.name}: ${lm.ref} fehlt oder ist mehrteilig, übersprungen`);
         continue;
       }
-      const fp = frameOf(b, lm.align);
-      if (lm.hideBlock) {
-        const n = hideCityBlock(scene, b);
-        if (n === 0) console.warn(`[landmarks] ${lm.name}: Block im Stadt-Mesh nicht gefunden, bleibt sichtbar`);
+      const fp = frameOf(b, lm.align); // nur Außenring (pts), Innenhöfe (holes) ignoriert
+      for (const ref of lm.hide ?? []) {
+        let ok = false;
+        try { ok = typeof hideBuilding === 'function' && hideBuilding(ref) === true; } catch (err) { console.warn(err); }
+        if (!ok) console.warn(`[landmarks] ${lm.name}: ${ref} nicht ausgeblendet, bleibt sichtbar`);
       }
       const kit = new Kit();
       lm.build(kit, fp);

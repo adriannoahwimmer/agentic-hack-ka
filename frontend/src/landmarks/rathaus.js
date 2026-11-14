@@ -5,6 +5,7 @@
  * Walmdach über dem Ostflügel, Mittelrisalit mit Giebel zum Platz und der Rathausturm.
  * Use-Cases: Orientierung am Marktplatz (Kirche und Rathaus rahmen die Pyramide).
  * Lokale Achsen: u ≈ Ost (Fassade zum Marktplatz bei +u), v ≈ Süd. Ca. 150 Dreiecke.
+ * Grundriss: nur der Außenring (`pts`) zählt, Innenhöfe (`holes`) werden ignoriert.
  */
 
 const WALL = 0xdcc6a2; // heller Sandstein
@@ -22,7 +23,9 @@ export const rathaus = {
   build(kit, fp) {
     const h = fp.h;
     const east = fp.w / 2; // Fassade zum Marktplatz
-    const wing = 15; // Flügeltiefe
+    // Flügeltiefe: Der Ostflügel ist nur ca. 10,5 m tief, dahinter liegen Innenhöfe (holes im
+    // Bake). Das Dach bleibt auf dem Flügel und schwebt nicht über einem Hof.
+    const wing = 9;
     const len = fp.d * 0.62; // gerader Teil der Ostfassade (Süden ist abgeschrägt)
     const v0 = -fp.d / 2 + len / 2;
     kit.roof(wing, len, 0.5, len - wing, 5.5, ROOF, east - wing / 2 - 1, h, v0);

@@ -46,11 +46,41 @@ function block(w, h, d, material, pos) {
   return m;
 }
 
+const BEACON_HDR = 3; // "an" heller als 1, damit das Licht unter ACES satt leuchtet und Bloom greift
+const BEACON_OFF = 0.12;
+
+/**
+ * Blaulicht-Segment: unbeleuchtetes MeshBasicMaterial (eigenes pro Auto, kein PointLight).
+ * `userData.on` / `userData.off` sind die Farben fürs Blinken; Start ist "aus".
+ * @param {number} hex Grundfarbe (hellrot bzw. hellblau)
+ * @param {[number, number, number]} pos Mittelpunkt
+ */
+function beacon(hex, pos) {
+  const on = new THREE.Color(hex).multiplyScalar(BEACON_HDR);
+  const off = new THREE.Color(hex).multiplyScalar(BEACON_OFF);
+  const m = block(0.5, 0.14, 0.3, new THREE.MeshBasicMaterial({ color: off.clone() }), pos);
+  m.userData.on = on;
+  m.userData.off = off;
+  return m;
+}
+
+/**
+ * Blaulicht schalten: rot und blau abwechselnd (phase true = rot an, blau aus).
+ * @param {THREE.Object3D} carObj Rückgabe von car({ police: true })
+ * @param {boolean} phase
+ */
+export function setLightbar(carObj, phase) {
+  const bar = carObj.userData.lightbar;
+  if (!bar) return;
+  bar[0].material.color.copy(phase ? bar[0].userData.on : bar[0].userData.off);
+  bar[1].material.color.copy(phase ? bar[1].userData.off : bar[1].userData.on);
+}
+
 const CAR_COLORS = [0xc0392b, 0x2e86de, 0xf1c40f, 0x27ae60, 0x8e44ad, 0xecf0f1, 0x34495e, 0xe67e22];
 
 /**
  * Low-Poly-Auto, ca. 4,2 x 1,8 x 1,5 m. Polizei: weiß-blau mit Lichtbalken.
- * `userData.lightbar` = [rot, blau] für das Blaulicht-Blinken (Feature-Scheibe),
+ * `userData.lightbar` = [rot, blau] (MeshBasicMaterial) für das Blinken per setLightbar(),
  * `userData.wheels` = die vier Räder (Vorderräder zuerst) für die Lenkanimation.
  * @param {{police?: boolean, color?: number}} [opts]
  * @returns {THREE.Group}
@@ -65,10 +95,8 @@ export function car(opts = {}) {
   g.add(block(1.6, 0.55, 2.2, police ? mat(0x1f3a93) : mat(0x22303c), [0, 1.22, 0.2]));
   if (police) {
     g.add(block(1.82, 0.22, 4.22, mat(0x1f3a93), [0, 0.62, 0])); // Streifen
-    const red = block(0.5, 0.14, 0.3, mat(0x550000, 0x000000), [-0.3, 1.57, 0.2]);
-    const blue = block(0.5, 0.14, 0.3, mat(0x000055, 0x000000), [0.3, 1.57, 0.2]);
-    red.material = red.material.clone();
-    blue.material = blue.material.clone();
+    const red = beacon(0xff1a1a, [-0.3, 1.57, 0.2]);
+    const blue = beacon(0x1f5bff, [0.3, 1.57, 0.2]);
     g.add(red, blue);
     g.userData.lightbar = [red, blue];
   }

@@ -1,5 +1,6 @@
 /**
  * Polizei im Client: Fahndungssterne, Streifenwagen mit Blaulicht und Verfolgung (Scheibe Polizei).
+ * Blaulicht: rote und blaue Dach-Segmente (MeshBasicMaterial, keine PointLights) blinken abwechselnd.
  *
  * Zweck: setzt die Server-Aktionen `set_wanted_level` und `spawn_units` (faction "police")
  * im Spiel um. Der Server (game_state, Dispatcher-Agent oder Fallback) entscheidet nur
@@ -235,8 +236,7 @@ export function init(ctx) {
     const on = Math.floor(blink * BLINK_HZ) % 2 === 0;
     for (const u of units.values()) {
       drive(u, dt);
-      const bar = u.obj.userData.lightbar;
-      if (bar) { bar[0].visible = on; bar[1].visible = !on; }
+      models.setLightbar(u.obj, u.index % 2 ? on : !on); // rot/blau im Wechsel, jedes zweite Auto gegenläufig
     }
     for (let i = wrecks.length - 1; i >= 0; i--) {
       wrecks[i].ttl -= dt;

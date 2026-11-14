@@ -1,6 +1,6 @@
 # Grand Theft Fächer (Fächerstadt Agents)
 
-Video: TBD
+Video: [demo video (Google Photos album)](https://photos.app.goo.gl/Yyjkj5WYqiEQ7gaX6)
 
 A browser open world around Karlsruhe Palace, built from real OpenStreetMap data: walk, drive, shoot, and get chased by the police. The twist: nothing is scripted. A Gemini police dispatcher and a Gemini quest giver make the decisions through function calling. The game never waits for them, because deterministic rules and scripted fallbacks keep it running when the model is slow or offline.
 

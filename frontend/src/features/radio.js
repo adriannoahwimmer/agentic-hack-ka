@@ -3,7 +3,7 @@
  *
  * Zweck: macht die Entscheidungen des Dispatcher-Agenten hörbar. Gemini-TTS ist
  * gestrichen (Q0-Live-Check, Design.md "Polizeifunk-TTS"), deshalb spricht der Browser
- * selbst (speechSynthesis, en-US). Ein kurzes Rauschen davor und danach gibt den Funk-Klang.
+ * selbst (speechSynthesis, de-DE, der Dispatcher funkt deutsch). Ein kurzes Rauschen davor und danach gibt den Funk-Klang.
  * Use-Cases:
  * - radio_message -> sofort hud.subtitle("Dispatch: ...")
  * - danach Vorlesen; neue Funksprüche stellen sich hinten an
@@ -36,12 +36,12 @@ function squelch(ac, seconds = 0.18) {
 }
 
 /**
- * Englische Stimme wählen (falls vorhanden).
+ * Deutsche Stimme wählen (falls vorhanden).
  * @returns {SpeechSynthesisVoice|null}
  */
 function pickVoice() {
   const voices = window.speechSynthesis?.getVoices() ?? [];
-  return voices.find((v) => v.lang === 'en-US') ?? voices.find((v) => v.lang?.startsWith('en')) ?? null;
+  return voices.find((v) => v.lang === 'de-DE') ?? voices.find((v) => v.lang?.startsWith('de')) ?? null;
 }
 
 /**
@@ -66,7 +66,7 @@ export function init(ctx) {
     const synth = window.speechSynthesis;
     if (!synth) return;
     const u = new SpeechSynthesisUtterance(msg.text);
-    u.lang = 'en-US';
+    u.lang = 'de-DE';
     u.rate = RATE;
     u.pitch = PITCH;
     const voice = pickVoice();

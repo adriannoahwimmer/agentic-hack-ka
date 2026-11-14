@@ -45,7 +45,7 @@
  * @property {{position: () => Vec2, heading: () => number, inVehicle: () => boolean, object3d: import('three').Object3D}} player
  * @property {{pois: object[], zoneAt: (x: number, z: number) => (string|null), randomRoadPoint: (near: Vec2, minDist: number, maxDist: number) => Vec2}} world
  * @property {{addTarget: (object3d: import('three').Object3D, target: CombatTarget) => void, removeTarget: (id: string) => void}} combat
- * @property {{car: (opts?: {police?: boolean, color?: number}) => import('three').Object3D, person: (opts?: {color?: number}) => import('three').Object3D}} models
+ * @property {{car: (opts?: {police?: boolean, color?: number}) => import('three').Object3D, person: (opts?: {color?: number}) => import('three').Object3D, setLightbar: (carObj: import('three').Object3D, phase: boolean) => void}} models
  * @property {{setWanted: (level: number) => void, toast: (text: string, ms?: number) => void, setObjective: (text: string|null) => void, subtitle: (text: string, ms?: number) => void, showDialog: (d: {speaker: string, text: string, sources?: {title: string, uri: string}[], pending?: boolean}) => void, hideDialog: () => void, addPanel: (id: string) => HTMLElement}} hud
  * @property {() => void} start Spielschleife starten (ruft main.js)
  */

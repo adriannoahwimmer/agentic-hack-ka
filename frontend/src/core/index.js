@@ -112,7 +112,7 @@ export async function createCore({ net }) {
     },
     world: worldApi,
     combat: { addTarget: combat.addTarget, removeTarget: combat.removeTarget, onShot: combat.onShot },
-    models: { car: models.car, person: models.person },
+    models: { car: models.car, person: models.person, setLightbar: models.setLightbar },
     hud,
     start() {
       let last = performance.now();

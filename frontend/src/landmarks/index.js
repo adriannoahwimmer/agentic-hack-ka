@@ -15,10 +15,11 @@
  */
 import * as THREE from 'three';
 import { Kit } from './kit.js';
+import { pyramide } from './pyramide.js';
 import { schloss } from './schloss.js';
 
 /** Reihenfolge = Priorität (Schloss zuerst). */
-const LANDMARKS = [schloss];
+const LANDMARKS = [schloss, pyramide];
 
 /**
  * Den einen Grundriss zu einer osm_ref finden (null bei fehlend oder mehrteilig).

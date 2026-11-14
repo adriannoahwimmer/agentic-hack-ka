@@ -1,4 +1,10 @@
-"""Gemeinsame Fixtures. Tests rufen Gemini NIE live auf (Free-Tier-Quota)."""
+"""Gemeinsame Fixtures. Tests rufen Gemini NIE live auf (Quota und Kosten)."""
+
+import os
+
+# Tests sind hermetisch: die lokale .env (echter Key, Modell-Overrides) nie laden.
+# Muss vor `import main` stehen, weil config.py die .env beim Import lädt.
+os.environ["PYTHON_DOTENV_DISABLED"] = "1"
 
 import pytest
 
@@ -20,6 +26,14 @@ def block_live_gemini(monkeypatch):
     real_get_client.cache_clear()
     yield
     real_get_client.cache_clear()
+
+
+@pytest.fixture(autouse=True)
+def backoff_sleeps(monkeypatch):
+    """Backoff ohne echte Wartezeit. Liefert die Liste der angefragten Delays."""
+    delays = []
+    monkeypatch.setattr(main, "_sleep", delays.append)
+    return delays
 
 
 @pytest.fixture

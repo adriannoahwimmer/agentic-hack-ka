@@ -1,6 +1,12 @@
 """Fake-Gemini-Client und Antwort-Builder fuer Tests (keine Netzwerkaufrufe)."""
 
-from google.genai import types
+from google.genai import errors, types
+
+
+def api_error(code, message="test"):
+    """Gemini-Fehler wie vom SDK: ServerError fuer 5xx, sonst ClientError."""
+    cls = errors.ServerError if code >= 500 else errors.ClientError
+    return cls(code, {"error": {"code": code, "message": message}})
 
 
 class FakeModels:
@@ -20,6 +26,11 @@ class FakeModels:
 class FakeClient:
     def __init__(self, responses):
         self.models = FakeModels(responses)
+
+    @property
+    def called_models(self):
+        """Modell-ID je generate_content-Aufruf, in Aufrufreihenfolge."""
+        return [c["model"] for c in self.models.calls]
 
 
 def text_response(text):

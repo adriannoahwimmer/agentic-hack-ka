@@ -1,33 +1,45 @@
 # CLAUDE.md
 
-FastAPI-Service mit Gemini (google-genai) und einem einfachen Tool-Calling-Agenten, deploybar auf Codesphere.
+FastAPI-Service mit Gemini (google-genai) und Tool-Calling-Agenten als Backend für ein Browser-Spiel, deploybar auf Codesphere. Architektur und Features stehen in `Design.md`.
 
 ## Warum
 Starter für einen Agentic-AI-Hackathon (Gemini + Codesphere): Neue Tools und Endpoints sollen schnell dazukommen, ohne dass die Infrastruktur neu gebaut werden muss.
 
 ## Projektkarte
-- `main.py`: gesamte App mit Gemini-Client, Tools und den Endpoints `/`, `/chat`, `/agent`
+- `main.py`: App mit Gemini-Client, Agent-Loop und den Endpoints `/`, `/chat`, `/agent`
+- `config.py`: Modellnamen, Agent-Limits, Timeouts, Retries (einzige Quelle dafür)
+- `Design.md`: Architektur und ein Abschnitt pro Feature
 - `tests/`: pytest mit Fake-Gemini (`tests/fakes.py`), ruft Gemini nie live auf
 - `scripts/check.ps1`, `scripts/check.sh`: ruff check, ruff format --check, pytest
 - `ci.yml`: Codesphere-Pipeline (prepare + run)
+- `.claude/skills/`: Google-Skills `gemini-api-dev` und `gemini-live-api-dev`
 - `docs/research/`, `docs/plans/`: Artefakte von /research_codebase und /create_plan
 - Stack: Python 3.10+, FastAPI, uvicorn, google-genai; ruff und pytest in `requirements-dev.txt`
 
 ## Arbeitsweise
 - Starten: `.venv\Scripts\uvicorn main:app --reload --port 3000` (Swagger unter /docs)
 - Verifizieren: `scripts\check.ps1` (bash: `scripts/check.sh`). Muss grün sein und läuft auch als Stop-Hook.
-- Modell nur über die Umgebungsvariable `GEMINI_MODEL` wechseln (Default in main.py:17).
-- API-Keys (`GEMINI_API_KEY`) nur aus der Umgebung lesen. Nie in Dateien, Tests oder Commits schreiben.
+- Das Repo wird public. Secrets (`GEMINI_API_KEY` u. a.) nur aus der Umgebung lesen, nie in Code, Tests, Logs oder Commits.
+
+<important if="du baust ein Feature oder schreibst neuen Code">
+- Eine Datei pro Feature. Jede Datei beginnt mit einem Kopfkommentar: Zweck und Use-Cases.
+- Docstrings für jedes Modul, jede Klasse und jede Funktion (im Frontend JSDoc).
+- Das Feature in `Design.md` im eigenen Abschnitt dokumentieren und bei Änderungen nachziehen.
+</important>
+
+<important if="du schreibst oder änderst Code, der Gemini aufruft (Agenten, Tools, Live API)">
+- Zuerst den Skill `gemini-api-dev` laden, für die Live API `gemini-live-api-dev`. Modelle und SDK nicht aus dem Gedächtnis nehmen. Was der Hackathon-Key wirklich kann, zeigt `client.models.list()`.
+- Modellnamen und Agent-Limits (Schritte, Timeouts, Retries) nur in `config.py`, per Env-Var überschreibbar. Nie im Feature-Code hartkodieren.
+- Jeden GenAI-Call als eine JSON-Zeile loggen (JSON Lines): Zeitstempel, Agent, Modell, Prompt, Config, Output. Inline-Daten (Bilder, Audio, Bytes) nur als Platzhalter mit MIME-Typ und Größe. Das Agent-Log-Overlay im Spiel liest dieses Format. Log-Dateien nach `logs/` (gitignored).
+- Keine Keys, Tokens oder Auth-Header ins Log.
+- Retries nur bei 5xx, nie bei 429 (Tier-3-Account: 429 heißt Spend-Cap erreicht). Bei 503 auf das Fallback-Modell aus `config.py` ausweichen.
+- Zum Testen nicht live aufrufen. Jeder Agent-Schritt ist ein bezahlter Request.
+- Den Modell-Turn unverändert in den Verlauf übernehmen (Thought-Signatures) und Tool-Ergebnisse mit `id` zurückgeben (siehe `agent()` in main.py).
+- Neues Tool: Funktion schreiben, in `TOOLS` eintragen, in `TOOL_DECLARATIONS` deklarieren. Fehler als `{"error": ...}` zurückgeben, nicht werfen.
+</important>
 
 <important if="du fügst Python-Abhängigkeiten hinzu oder änderst sie">
 - Laufzeit-Pakete gehören nach `requirements.txt` (wird auf Codesphere installiert), Dev-Tools nur nach `requirements-dev.txt`.
-</important>
-
-<important if="du änderst Gemini-Aufrufe, den Agent-Loop oder Tools in main.py">
-- Free Tier: ca. 20 Requests/Tag pro Modell, und jeder Agent-Schritt ist ein Request. Zum Testen nicht live aufrufen.
-- Retries nur bei 5xx, nie bei 429 (main.py:33-38).
-- Den Modell-Turn unverändert in den Verlauf übernehmen (Thought-Signatures) und Tool-Ergebnisse mit `id` zurückgeben (main.py:185-199).
-- Neues Tool: Funktion schreiben, in `TOOLS` (main.py:108) eintragen, in `TOOL_DECLARATIONS` (main.py:110) deklarieren. Fehler als `{"error": ...}` zurückgeben, nicht werfen.
 </important>
 
 <important if="du schreibst oder änderst Tests">

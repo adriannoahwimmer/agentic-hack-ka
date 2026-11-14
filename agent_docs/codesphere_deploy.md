@@ -12,12 +12,13 @@ Auf Codesphere ist noch nichts deployt. Alles hier ist aus der Doku abgeleitet.
 - **run** (ci.yml:12-23): Service `api` startet `.venv/bin/uvicorn main:app --host 0.0.0.0 --port 3000`.
   - `network.ports: [3000]`
   - `healthEndpoint: http://localhost:3000/` (ci.yml:21)
-- Port 3000 ist der Standardport für den Codesphere-Healthcheck. `GET /` (main.py:156-162) antwortet ohne Gemini-Aufruf.
+- Port 3000 ist der Standardport für den Codesphere-Healthcheck. `GET /` (main.py:230-241) antwortet ohne Gemini-Aufruf.
 - Ein Service allein ist automatisch das Gateway. Ein Router-Service ist nicht nötig.
 
 ## Umgebungsvariablen
 - `GEMINI_API_KEY` im UI unter "Environment Variables" anlegen ("+ Add New Variable"). Der Wert wird danach maskiert angezeigt.
-- Optional `GEMINI_MODEL`, um das Modell ohne Code-Änderung zu wechseln.
+- Optional alle Variablen aus `.env.example` (Modelle, Thinking-Level, Limits, Timeouts, Retries). Leer lassen heißt Default aus `config.py`.
+- `config.py` lädt eine `.env` nur, wenn sie existiert. Auf Codesphere gibt es keine, dort zählen allein die UI-Variablen.
 - Alternative mit Vault-Secret: als Kommentar vorbereitet in ci.yml:24-27 (`${{ vault.GEMINI_API_KEY }}`).
 - Änderungen auf Workspace-Ebene greifen erst in einem neu geöffneten Terminal.
 - Nach dem Deploy prüfen, ob `GET /` `"gemini_key_configured": true` meldet.

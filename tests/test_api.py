@@ -1,8 +1,8 @@
 from fastapi.testclient import TestClient
-from google.genai import errors
 
+import config
 import main
-from tests.fakes import call_response, text_response
+from tests.fakes import api_error, call_response, text_response
 
 client = TestClient(main.app)
 
@@ -12,7 +12,11 @@ def test_health_without_key():
     assert r.status_code == 200
     assert r.json() == {
         "status": "ok",
-        "model": main.MODEL,
+        "models": {
+            "agent": config.GEMINI_MODEL_AGENT,
+            "chat": config.GEMINI_MODEL_CHAT,
+            "fallback": config.GEMINI_MODEL_FALLBACK,
+        },
         "gemini_key_configured": False,
     }
 
@@ -26,8 +30,8 @@ def test_chat_returns_answer(fake_gemini):
     fake = fake_gemini([text_response("Hallo!")])
     r = client.get("/chat", params={"q": "Sag Hallo"})
     assert r.status_code == 200
-    assert r.json() == {"answer": "Hallo!"}
-    assert fake.models.calls[0]["model"] == main.MODEL
+    assert r.json() == {"answer": "Hallo!", "model": config.GEMINI_MODEL_CHAT}
+    assert fake.called_models == [config.GEMINI_MODEL_CHAT]
 
 
 def test_chat_requires_q():
@@ -41,20 +45,24 @@ def test_chat_without_client_is_500():
     assert "GEMINI_API_KEY" in r.json()["detail"]
 
 
-def test_chat_maps_gemini_error_to_502(fake_gemini):
-    overloaded = errors.ServerError(
-        503, {"error": {"code": 503, "message": "overloaded"}}
-    )
-    fake_gemini([overloaded])
+def test_chat_maps_client_error_to_502_without_retry(fake_gemini, backoff_sleeps):
+    fake = fake_gemini([api_error(400, "bad request")])
     r = client.get("/chat", params={"q": "x"})
     assert r.status_code == 502
-    assert "503" in r.json()["detail"]
+    assert "400" in r.json()["detail"]
+    assert len(fake.models.calls) == 1
+    assert backoff_sleeps == []
 
 
 def test_agent_answers_without_tools(fake_gemini):
-    fake_gemini([text_response("Blau.")])
+    fake = fake_gemini([text_response("Blau.")])
     r = client.get("/agent", params={"q": "Nenne eine Farbe"})
-    assert r.json() == {"answer": "Blau.", "steps": []}
+    assert r.json() == {
+        "answer": "Blau.",
+        "model": config.GEMINI_MODEL_AGENT,
+        "steps": [],
+    }
+    assert fake.called_models == [config.GEMINI_MODEL_AGENT]
 
 
 def test_agent_runs_tool_loop(fake_gemini):
@@ -84,7 +92,7 @@ def test_agent_runs_tool_loop(fake_gemini):
 
 
 def test_agent_stops_at_step_limit(fake_gemini):
-    fake_gemini([call_response(("get_time", {}))] * main.MAX_AGENT_STEPS)
+    fake_gemini([call_response(("get_time", {}))] * config.MAX_AGENT_STEPS)
     r = client.get("/agent", params={"q": "Endlosschleife"})
     assert r.status_code == 500
     assert "Limit" in r.json()["detail"]

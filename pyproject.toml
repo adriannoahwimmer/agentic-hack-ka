@@ -1,6 +1,9 @@
 [tool.ruff]
 # Python-Version im Codesphere-Image ist unklar -> konservativ 3.10 (main.py braucht `X | None`).
 target-version = "py310"
+# Fremde Skills (npx skills, Hash in skills-lock.json) nicht umformatieren.
+# ruff formatiert seit 0.17 auch Python-Blöcke in Markdown.
+extend-exclude = [".claude/skills"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

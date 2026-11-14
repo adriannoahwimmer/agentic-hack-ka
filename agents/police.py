@@ -48,8 +48,10 @@ level 2-3, several deaths or killed officers level 4-5. Never change by more tha
 - spawn_units.target_units is the total number of active units you want (max units_max). \
 Use patrol up to level 3, swat from level 4. Tactics: chase (pursue), roadblock (block \
 the road ahead), surround (encircle). near_place_id must be an id from places, or omit it.
-- radio_message: one short radio call in police jargon (max 20 words), English, name the \
-real place from places. No game or AI talk.
+- radio_message: one short German police radio call (Polizeifunk jargon, max 15 words), \
+e.g. "Alle Streifen: Schüsse am Marktplatz, Täter bewaffnet, Eigensicherung beachten." \
+Name the real Karlsruhe place from places (suspect's zone or near_place_id) by its German \
+local name, e.g. Marktplatz, Schlossplatz, Kronenplatz, Schloss. No game or AI talk.
 - Every tool call needs a one-sentence reason.
 Call set_wanted_level, spawn_units and radio_message in one response when the situation \
 calls for it; skip spawn_units if enough units are active."""
@@ -94,7 +96,8 @@ TOOLS = types.Tool(
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "Radio call, max 20 words.",
+                        "description": "German police radio call, max 15 words, "
+                        "naming a Karlsruhe place.",
                     },
                     "reason": {"type": "string", "description": "One sentence why."},
                 },
@@ -115,11 +118,11 @@ GEN_CONFIG = types.GenerateContentConfig(
 )
 
 RADIO_TEMPLATES = (
-    "All units, shots fired near {place}. Suspect armed, approach with caution.",
-    "Dispatch to all cars: suspect last seen at {place}. Wanted level {level}.",
-    "Code three to {place}. Armed suspect, civilians in the area.",
-    "Units converge on {place}. Set up a perimeter, do not lose visual.",
-    "Suspect fleeing from {place}. {units} units in pursuit, keep the channel clear.",
+    "Alle Streifen: Schüsse bei {place}. Täter bewaffnet, Eigensicherung beachten.",
+    "Leitstelle an alle: Täter zuletzt gesehen bei {place}. Fahndungsstufe {level}.",
+    "Mit Sonderrechten nach {place}. Bewaffneter Täter, Passanten vor Ort.",
+    "Alle Einheiten nach {place}. Absperrung einrichten, Sichtkontakt halten.",
+    "Täter flüchtig ab {place}. {units} Streifen in Verfolgung, Kanal freihalten.",
 )
 
 MEMORY: deque[str] = deque(maxlen=5)
@@ -194,7 +197,7 @@ def fallback(snapshot: AgentSnapshot) -> list[Envelope]:
     if level <= 0:
         return []
     zone = snapshot.player.zone_id if snapshot.player else None
-    place = _place_name(snapshot, zone) or "downtown Karlsruhe"
+    place = _place_name(snapshot, zone) or "Innenstadt Karlsruhe"
     tactic = "chase" if level <= 2 else ("roadblock" if level == 3 else "surround")
     template = RADIO_TEMPLATES[next(_templates) % len(RADIO_TEMPLATES)]
     return [

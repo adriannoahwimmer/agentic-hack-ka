@@ -104,7 +104,7 @@ Hand-modelled low-poly models of the Palace, the Pyramid, the Protestant City Ch
 - Vite 8.
 
 **Browser APIs**
-- WebGL, WebSocket, Pointer Lock, Web Speech API (`speechSynthesis`, radio voice), Web Audio API (radio static), localStorage.
+- WebGL, WebSocket, Pointer Lock, Web Speech API (`speechSynthesis`, radio voice), Web Audio API (radio static, police siren), localStorage.
 
 **Data and assets**
 - OpenStreetMap, © OpenStreetMap contributors, ODbL. The city geometry was fetched once from the OpenStreetMap API 0.6 (`map` call in 2 × 2 tiles, because no Overpass server answered that afternoon). The POI coordinates came from the Overpass API (mirror `maps.mail.ru`).

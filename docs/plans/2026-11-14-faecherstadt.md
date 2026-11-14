@@ -529,11 +529,18 @@ Hub-API, Feature-Modul-Protokoll, JSONL-Format, `agent_log`, `/debug/action`.
 
 ### Erfolgskriterien
 #### Automatisch
-- [ ] `scripts\check.ps1` grün
-- [ ] Alle bisherigen Tests laufen weiter: `/chat`, `/agent`, Retry, Fallback, 429.
+- [x] `scripts\check.ps1` grün (140 Tests, frontend build)
+- [x] Alle bisherigen Tests laufen weiter: `/chat`, `/agent`, Retry, Fallback, 429.
+- [x] Automatischer Smoke-Test gegen echten uvicorn (Port 3099, offline, ohne Key): `GET /` mit `agents_mode`/`genai_calls`, `/play/` 200, `/debug/action` (radio_message) kommt per WS an, ungültiges Event liefert `error`.
 #### Manuell
 - [ ] `uvicorn main:app --port 3000` startet ohne Feature-Module, `GET /` liefert JSON.
 - [ ] WS-Smoke: `npm --prefix frontend run dev`, Konsole zeigt „connected“. `/debug/action` mit `contract\examples\radio_message.json` erscheint in der Browser-Konsole.
+
+**Umsetzungsnotizen 0b:**
+- Neue Tests: `test_gemini.py` (Deadline, Versuche, `use_fallback_model`, Budget, `agenerate`), `test_genai_log.py`, `test_hub.py`, `test_ws.py`, `test_main_loader.py`. Fixtures: `genai_log_lines`, `fresh_hub`. Builder: `audio_response`, `grounded_response`.
+- Hub-Handler-Signatur: `fn(event, envelope)` bzw. `fn(payload_model, envelope)`, wie `net.on(type, (payload, env) => ...)` im Frontend.
+- Budget-Ablehnung ist `HTTPException(503, "GenAI-Budget erschöpft: ...")` ohne Request und ohne Logzeile. Der Agent loggt danach seinen Fallback.
+- Zwischendurch gemergt: PR #3 (setup-worktree.ps1 nur ASCII, Test `test_scripts_ascii.py`).
 
 ---
 

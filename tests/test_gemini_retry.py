@@ -1,4 +1,4 @@
-"""Tests für Retry, Fallback und 429-Handling in main.generate() und für config.py.
+"""Tests für Retry, Fallback und 429-Handling in gemini.generate() und für config.py.
 
 Zweck: sicherstellen, dass 5xx mit Backoff wiederholt und dann auf das
 Fallback-Modell ausgewichen wird, 429 nie wiederholt wird und alle Werte aus
@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import config
+import gemini
 import main
 from tests.fakes import api_error, call_response, text_response
 
@@ -147,7 +148,7 @@ def test_backoff_delay_grows_with_jitter_and_cap(attempt):
         config.GEMINI_RETRY_MAX_DELAY, config.GEMINI_RETRY_BASE_DELAY * 2**attempt
     )
     for _ in range(20):
-        assert ceiling / 2 <= main.backoff_delay(attempt) <= ceiling
+        assert ceiling / 2 <= gemini.backoff_delay(attempt) <= ceiling
 
 
 ENV_OVERRIDES = {

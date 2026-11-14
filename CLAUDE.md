@@ -6,11 +6,16 @@ FastAPI-Service mit Gemini (google-genai) und Tool-Calling-Agenten als Backend f
 Starter für einen Agentic-AI-Hackathon (Gemini + Codesphere): Neue Tools und Endpoints sollen schnell dazukommen, ohne dass die Infrastruktur neu gebaut werden muss.
 
 ## Projektkarte
-- `main.py`: App mit Gemini-Client, Agent-Loop und den Endpoints `/`, `/chat`, `/agent`
-- `config.py`: Modellnamen, Agent-Limits, Timeouts, Retries (einzige Quelle dafür)
-- `Design.md`: Architektur und ein Abschnitt pro Feature
+- `main.py`: App, Feature-Loader (`FEATURE_MODULES`), Endpoints `/`, `/chat`, `/agent`, Spiel unter `/play/`
+- `gemini.py`: einziger Gemini-Aufrufpunkt (`generate`, `agenerate`): Retry, Fallback-Modell, Deadline, Request-Budget
+- `genai_log.py`: JSONL-Log jedes GenAI-Calls (`logs/genai.jsonl`), Quelle fürs Agent-Log-Overlay
+- `hub.py`: Event-/Action-Bus (Registrierungspunkt für Features), `ws.py`: WebSocket `/ws` und `/debug/action`
+- `protocol.py` + `contract/examples/`: der Vertrag (alle Nachrichten), `geo.py`: Projektion, `data/pois.json`: POIs
+- `agents/`: ein Modul pro Agent; `frontend/`: Vite + Three.js + Rapier, Build nach `static/`
+- `config.py`: Modellnamen, Agent-Limits, Timeouts, Retries, Budget, Clamps (einzige Quelle dafür)
+- `Design.md`: Architektur, Vertrag und ein Abschnitt pro Feature
 - `tests/`: pytest mit Fake-Gemini (`tests/fakes.py`), ruft Gemini nie live auf
-- `scripts/check.ps1`, `scripts/check.sh`: ruff check, ruff format --check, pytest
+- `scripts/check.ps1`, `scripts/check.sh`: ruff check, ruff format --check, pytest, frontend build; `scripts/setup-worktree.ps1`: Worktree pro Scheibe
 - `ci.yml`: Codesphere-Pipeline (prepare + run)
 - `.claude/skills/`: Google-Skills `gemini-api-dev` und `gemini-live-api-dev`
 - `docs/research/`, `docs/plans/`: Artefakte von /research_codebase und /create_plan
@@ -34,6 +39,7 @@ Starter für einen Agentic-AI-Hackathon (Gemini + Codesphere): Neue Tools und En
 - Keine Keys, Tokens oder Auth-Header ins Log.
 - Retries nur bei 5xx, nie bei 429 (Tier-3-Account: 429 heißt Spend-Cap erreicht). Bei 503 auf das Fallback-Modell aus `config.py` ausweichen.
 - Zum Testen nicht live aufrufen. Jeder Agent-Schritt ist ein bezahlter Request.
+- Gemini nur über `gemini.generate()`/`agenerate()` aufrufen (Log und Budget greifen dort). Spiel-Agenten: `agent=`-Name, `timeout_ms=config.AGENT_DEADLINE_MS`, `use_fallback_model=False`, bei Fehler den geskripteten Fallback nutzen.
 - Den Modell-Turn unverändert in den Verlauf übernehmen (Thought-Signatures) und Tool-Ergebnisse mit `id` zurückgeben (siehe `agent()` in main.py).
 - Neues Tool: Funktion schreiben, in `TOOLS` eintragen, in `TOOL_DECLARATIONS` deklarieren. Fehler als `{"error": ...}` zurückgeben, nicht werfen.
 </important>

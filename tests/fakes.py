@@ -48,3 +48,23 @@ def call_response(*calls):
     ]
     content = types.Content(role="model", parts=parts)
     return types.GenerateContentResponse(candidates=[types.Candidate(content=content)])
+
+
+def audio_response(data: bytes, mime="audio/wav"):
+    """TTS-Antwort: ein Inline-Audio-Part (z. B. WAV oder audio/L16;rate=24000)."""
+    part = types.Part(inline_data=types.Blob(data=data, mime_type=mime))
+    content = types.Content(role="model", parts=[part])
+    return types.GenerateContentResponse(candidates=[types.Candidate(content=content)])
+
+
+def grounded_response(text, sources):
+    """Maps-Grounding-Antwort: Text plus Quellen [(title, uri), ...] in grounding_metadata."""
+    content = types.Content(role="model", parts=[types.Part(text=text)])
+    metadata = types.GroundingMetadata(
+        grounding_chunks=[
+            types.GroundingChunk(maps=types.GroundingChunkMaps(title=title, uri=uri))
+            for title, uri in sources
+        ]
+    )
+    candidate = types.Candidate(content=content, grounding_metadata=metadata)
+    return types.GenerateContentResponse(candidates=[candidate])

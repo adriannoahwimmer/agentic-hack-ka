@@ -20,6 +20,7 @@ Modelle und SDK-Fragen zuerst im Skill `gemini-api-dev` nachschlagen (`.claude/s
 | `GEMINI_THINKING_LEVEL` | `low` | für `/agent` und `/chat`, auch beim Fallback (`THINKING` in main.py) |
 | `MAX_AGENT_STEPS` | `8` | max. Loop-Schritte, also Requests, pro `/agent` |
 | `GEMINI_TIMEOUT_MS` | `15000` | Deadline pro Request, siehe "Timeout = Server-Deadline" und "Latenz mit Polizei-Function-Call" |
+| `GEMINI_MIN_SERVER_DEADLINE_MS` | `10000` | kleinste Server-Deadline; die API lehnt weniger mit 400 ab. `gemini.py` schickt nie weniger |
 | `GEMINI_TRANSPORT_ATTEMPTS` | `2` | SDK-Versuche bei Timeout, Verbindungsabbruch oder 408 |
 | `GEMINI_RETRY_ATTEMPTS` | `3` | Versuche pro Modell bei 500, 502 und 503 |
 | `GEMINI_RETRY_BASE_DELAY` / `_MAX_DELAY` | `2.0` / `8.0` s | Backoff |
@@ -35,6 +36,12 @@ Modelle und SDK-Fragen zuerst im Skill `gemini-api-dev` nachschlagen (`.claude/s
 - `gemini-2.5-*` gilt als deprecated, nicht verwenden. `gemini-2.5-flash-lite` ist zwar gelistet, antwortet aber mit 404 "no longer available to new users".
 - `gemini-decision-1` ist **nicht** gelistet (die Liste kommt von v1), über v1beta aber aufrufbar (siehe "Decisions API").
 - Neu prüfen: `client.models.list()` und dabei `m.name` sowie `m.supported_actions` ausgeben. Das kostet kein Generierungs-Kontingent.
+
+## Maps Grounding: auf diesem Projekt gesperrt (429)
+- **Maps Grounding (`tools=[Tool(google_maps=GoogleMaps())]`) liefert auf diesem Projekt 429** "You exceeded your current quota" (Quest-Live-Check Q0, 2026-11-14 ca. 15:18, `gemini-3.5-flash-lite`). Gesperrt ist das Tool, nicht das Modell und nicht das Spend-Cap.
+- Gegentest 2026-11-14 14:48:59 UTC: genau 1 Request ohne Tools an `gemini-3.5-flash-lite` (`attempts=1`, ohne Fallback-Modell, `GEMINI_TRANSPORT_ATTEMPTS=1`, Prompt "Antworte nur mit dem Wort: ok"): **200, Antwort "ok", 1,5 s.** Polizei und Quest-NPC laufen live also normal.
+- Folge: Maps Grounding nicht aufrufen. Die Kürzung "Maps Grounding" ist gezogen: `lookup_place` nutzt die POI-Beschreibung aus `data/pois.json`, es gibt keine Quellenzeile im Dialog. Ein 429 bei einem Call **mit** `google_maps` sagt nichts über das Spend-Cap.
+- Die Regel "429 nie wiederholen" bleibt. Ein 429 bei einem Call **ohne** Built-in-Tools heißt weiterhin: Spend-Cap prüfen (aistudio.google.com/spend).
 
 ## Latenz der Textmodelle (2026-11-14, ca. 11:45 Uhr)
 Je Modell 3 Calls über `generate()` (damals main.py, heute gemini.py) mit `thinking_level=low` und Timeout 30 s, ohne Retry und ohne Fallback. Die Modelle liefen abwechselnd.
@@ -79,13 +86,13 @@ Folgen:
   - Der Wert gilt für beide Modelle (ein Client). 15 s decken den langsamsten erfolgreichen Fallback-Call (12,5 s) ab.
   - 5 s wären zu knapp: 3 von 4 erfolgreichen Fallback-Calls wären dann im 504 gelandet.
   - Hängt das Primärmodell, startet der Fallback nach etwa 15 statt 30 s.
-  - Die Spiel-Agenten haben eine eigene Deadline pro Request: `AGENT_DEADLINE_MS` (6 s), übergeben als `timeout_ms` an `generate()` (Plan, Phase 0b).
+  - Die Spiel-Agenten haben eine eigene Deadline pro Request: `AGENT_DEADLINE_MS` (6 s), übergeben als `timeout_ms` an `agenerate()` und dort lokal per asyncio durchgesetzt. An Gemini gehen mindestens 10 s (siehe "Timeout = Server-Deadline").
 - Für das Spiel ist das Fallback-Modell mit 5 bis 12,5 s zu langsam. Spiel-Agenten rufen es deshalb nicht auf (`use_fallback_model=False`, Plan, Phase 0b). Fällt das Agent-Modell aus oder bleibt die Antwort aus, greift sofort der geskriptete Fallback des Spiels. So kostet kein Request Geld, dessen Ergebnis verworfen würde.
 - Takt im Spiel: Die Latenz ist kein Engpass, das Request-Budget bestimmt den Takt.
   - Verbindlich (`config.py`, Plan `docs/plans/2026-11-14-faecherstadt.md`): Sammelfenster `AGENT_DEBOUNCE_S` mindestens 5 s, Mindestabstand `POLICE_MIN_INTERVAL_S` 8 s, also höchstens 7,5 Requests pro Minute und Agent.
   - Pro Agent höchstens ein Request gleichzeitig. Events, die währenddessen ankommen, fließen in den nächsten Snapshot.
   - Je Request fallen rund 900 Tokens Input und 115 Output an.
-  - `AGENT_DEADLINE_MS` (6 s) reicht dem Agent-Modell mit großem Abstand (max. 0,92 s).
+  - `AGENT_DEADLINE_MS` (6 s, lokal) reicht dem Agent-Modell mit großem Abstand (max. 0,92 s).
 
 ## Live-Smoke-Tests (2026-11-14, ca. 11:20-11:29 Uhr)
 Mit dem damaligen Default `gemini-4-hydrogen`.
@@ -100,6 +107,18 @@ Gemessen mit `/agent` über den echten Codepfad und einer calculator-Frage. Die 
 
 - Hydrogen funktioniert über `generate_content` mit `thinking_level=low` und Function Calling. Die Latenz lag zum Testzeitpunkt aber bei 30 bis 90 s pro Schritt. Mit 30 s Timeout landet dann fast jeder Request nach etwa 30 s beim Fallback.
 - `gemini-3.5-flash-lite` akzeptiert `thinking_level=low` und macht Function Calling korrekt. Es war in beiden Läufen schnell.
+
+## TTS und Maps Grounding: Q0-Live-Checks (2026-11-14, ca. 15:18 Uhr)
+Je genau 1 Request über `gemini.generate` (`attempts=1`, ohne Fallback-Modell), SDK-Default `v1`.
+
+| Check | Aufruf | Ergebnis |
+|---|---|---|
+| TTS | `GEMINI_MODEL_TTS=gemini-3.8-flash-lite-tts`, `response_modalities=["AUDIO"]`, `speech_config.voice_config.prebuilt_voice_config(voice_name="Orus")` | **400** nach 2,2 s: `Invalid JSON payload received. Unknown name "speechConfig" at 'generation_config': Cannot find field.` Kein MIME-Typ, keine Latenz fürs Audio. |
+| Maps | `GEMINI_MODEL_MAPS=gemini-3.5-flash-lite`, `tools=[Tool(google_maps=GoogleMaps())]`, Frage zum Schloss | **429** nach 4,0 s: „You exceeded your current quota“. Quellenpfad (`candidates[0].grounding_metadata.grounding_chunks[].maps`) damit nicht bestätigt. |
+
+- Folge: Beide Kürzungen gezogen (Design.md, „Maps-Fakten“ und „Polizeifunk-TTS“). Funk spricht der Browser (`speechSynthesis`), `lookup_place` nutzt die POI-Beschreibung.
+- TTS-Vermutung (nicht geprüft): `speechConfig` gibt es in `generation_config` nur unter `v1beta` oder TTS läuft nur über die Interactions API. Ein zweiter Versuch hätte das Request-Budget der Scheibe überschritten.
+- **429 geklärt (2026-11-14):** Der 429 betraf nur das Tool `google_maps`. Maps Grounding ist auf dem Projekt gesperrt. Es war kein Spend-Cap, normale Calls (Polizei, Quest-NPC) laufen. Ein 429 mit `google_maps` heißt hier also nicht „Budget leer“.
 
 ## Decisions API (`gemini-decision-1`)
 Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem Hackathon-Key und google-genai 3.3.0.
@@ -127,6 +146,7 @@ Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem H
 - Das SDK schickt `HttpOptions.timeout` als Header `X-Server-Timeout` mit (google-genai `_api_client.py`, `populate_server_timeout_header`).
 - Gemini bricht nach dieser Zeit selbst ab und antwortet mit **504 DEADLINE_EXCEEDED**. Ein clientseitiger httpx-Timeout tritt deshalb praktisch nicht auf.
 - Folge: Ein 504 bedeutet "das Modell war innerhalb unserer Deadline nicht fertig". Derselbe Request am selben Modell läuft wieder hinein, deshalb geht es bei 504 sofort zum Fallback.
+- **Minimum 10 s:** Kürzere Server-Deadlines lehnt die API mit 400 "Minimum allowed deadline is 10s" ab (Live-Check Polizei, 2026-11-14, `AGENT_DEADLINE_MS=6000`). Seitdem schickt `gemini.py` immer `max(GEMINI_MIN_SERVER_DEADLINE_MS, timeout_ms)` (auch für den Client-Default `GEMINI_TIMEOUT_MS`). Kürzere Spiel-Deadlines gelten nur lokal in `agenerate()`.
 
 ## Fehler- und Retry-Logik (`gemini.generate`)
 | Fall | Verhalten | HTTP an den Client |
@@ -168,7 +188,8 @@ Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem H
 ## Spiel-Agenten: Aufruf, Budget, Log
 - Aufruf aus dem Spiel: `await gemini.agenerate(contents, config.GEMINI_MODEL_POLICE, cfg, agent="police", attempts=config.AGENT_ATTEMPTS, timeout_ms=config.AGENT_DEADLINE_MS, use_fallback_model=False)`. Jede `HTTPException` (auch Budget) heißt: geskripteter Fallback, geloggt mit `genai_log.log_fallback(...)`.
 - Vorher `gemini.live_enabled()` prüfen. Bei `AGENTS_MODE=offline` (Default) gibt es keinen Request, nur den Fallback.
-- `timeout_ms` setzt `GenerateContentConfig.http_options`. Das SDK schickt den Wert auch als `X-Server-Timeout` (geprüft in `_api_client.py`, `_build_request`).
+- `timeout_ms` ist die Spiel-Deadline. `agenerate()` setzt sie lokal durch (`asyncio.wait_for`, danach HTTPException 504, der Fallback greift sofort). An Gemini geht über `GenerateContentConfig.http_options` bzw. `X-Server-Timeout` (geprüft in `_api_client.py`, `_build_request`) `max(GEMINI_MIN_SERVER_DEADLINE_MS, timeout_ms)`. Der verworfene Request läuft im Thread zu Ende und erscheint trotzdem im Log und im Budget.
+- `QUEST_DEADLINE_MS` (8 s) gilt lokal für ein ganzes NPC-Gespräch (`agents/quest.py`, `asyncio.wait_for`), `TTS_DEADLINE_MS` (8 s) wäre lokal pro TTS-Call (TTS ist gekürzt).
 - Budget (`gemini.BUDGET`, pro Prozess): `GENAI_MAX_CALLS_PER_MIN` (30) und `GENAI_MAX_CALLS_TOTAL` (400). Geprüft vor jedem Versuch. Ist es erschöpft, kommt HTTP 503 ohne Request. `GET /` zeigt den Zähler als `genai_calls`.
 - JSONL-Log: eine Zeile pro Versuch in `GENAI_LOG_PATH` (`logs/genai.jsonl`), Format `protocol.GenaiLogLine` (Design.md, "Vertrag"). `hub.py` schickt jede Zeile als `agent_log` an die Browser. Requests zählen: `(Get-Content logs\genai.jsonl).Count`.
 

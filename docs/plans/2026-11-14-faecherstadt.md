@@ -541,6 +541,7 @@ Hub-API, Feature-Modul-Protokoll, JSONL-Format, `agent_log`, `/debug/action`.
 - Hub-Handler-Signatur: `fn(event, envelope)` bzw. `fn(payload_model, envelope)`, wie `net.on(type, (payload, env) => ...)` im Frontend.
 - Budget-Ablehnung ist `HTTPException(503, "GenAI-Budget erschöpft: ...")` ohne Request und ohne Logzeile. Der Agent loggt danach seinen Fallback.
 - Zwischendurch gemergt: PR #3 (setup-worktree.ps1 nur ASCII, Test `test_scripts_ascii.py`).
+- Nachtrag nach dem Polizei-Merge: Die API lehnt Server-Deadlines unter 10 s ab (400 „Minimum allowed deadline is 10s“). `gemini.py` schickt deshalb immer `max(GEMINI_MIN_SERVER_DEADLINE_MS, timeout_ms)`. `agenerate()` setzt die kurze Spiel-Deadline lokal durch (asyncio, HTTPException 504). `AGENT_DEADLINE_MS` ist wieder 6 s, der Polizei-Workaround mit 10 s ist zurückgenommen.
 
 ---
 
@@ -710,8 +711,8 @@ Gang-Boss (`agents/gang.py`) streichen. Das ist die erste Kürzung insgesamt. **
 
 ### Erfolgskriterien
 #### Automatisch
-- [ ] `scripts\check.ps1` grün, einschließlich `test_game_state.py`, `test_runner.py` und `test_police.py`
-- [ ] Test belegt: maximal 1 Gemini-Request pro Polizei-Zyklus, 0 Requests bei `AGENTS_MODE=offline`
+- [x] `scripts\check.ps1` grün, einschließlich `test_game_state.py`, `test_runner.py` und `test_police.py`
+- [x] Test belegt: maximal 1 Gemini-Request pro Polizei-Zyklus, 0 Requests bei `AGENTS_MODE=offline`
 #### Manuell
 - [ ] Offline: schießen → sofort 1 Stern. Nach ca. 5 s Fallback-Einheiten und Funk-Untertitel, im Overlay bzw. in der Konsole mit `FALLBACK`.
 - [ ] Live (P4): Agent setzt Level und Einheiten passend zur Szene. Antwort unter 2 s, keine hängende Demo bei künstlich niedriger Deadline (`AGENT_DEADLINE_MS=1`).
@@ -815,10 +816,12 @@ In der globalen Reihenfolge:
 1. **TTS** streichen: `tts.py` entfällt, `radio.js` nutzt nur `speechSynthesis`.
 2. **Maps Grounding** streichen: `maps_facts.py` entfällt, `lookup_place` liefert `description` aus `pois.json`, keine Quellenzeile.
 
+**Stand 15:30:** Beide Kürzungen gezogen. Q0 ergab TTS 400 (`speechConfig` unbekannt) und Maps 429 (quota exceeded), Details in `agent_docs/gemini_api.md`.
+
 ### Erfolgskriterien
 #### Automatisch
-- [ ] `scripts\check.ps1` grün, einschließlich `test_quests.py`, `test_quest_agent.py`, `test_maps_facts.py` und `test_tts.py`
-- [ ] Test belegt: `/npc/talk` liefert bei jedem Gemini-Fehler HTTP 200 mit `fallback: true`
+- [x] `scripts\check.ps1` grün, einschließlich `test_quests.py`, `test_quest_agent.py` (`test_maps_facts.py` und `test_tts.py` entfallen mit den Kürzungen 1 und 2)
+- [x] Test belegt: `/npc/talk` liefert bei jedem Gemini-Fehler HTTP 200 mit `fallback: true`
 #### Manuell
 - [ ] Q0 dokumentiert: TTS-Modell aufrufbar ja/nein, MIME-Typ, Latenz. Maps-Quellenpfad.
 - [ ] Offline: NPC gibt eine Fallback-Quest, Marker erscheint, Ankunft spawnt Gegner, nach dem Erschießen ist die Quest erfüllt.

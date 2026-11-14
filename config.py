@@ -90,6 +90,12 @@ MAX_AGENT_STEPS = max(1, _env_number("MAX_AGENT_STEPS", 8))  # Requests pro /age
 # 15 s deckt den Fallback ab und halbiert die Wartezeit bei hängendem Primärmodell.
 # Hydrogen und Carbon brauchen deutlich mehr.
 GEMINI_TIMEOUT_MS = _env_number("GEMINI_TIMEOUT_MS", 15_000)
+# Kleinste Deadline, die Gemini annimmt (darunter 400 "Minimum allowed deadline is 10s",
+# Live-Check Polizei 2026-11-14). gemini.py schickt nie weniger; kürzere Spiel-Deadlines
+# setzt agenerate() lokal per asyncio durch.
+GEMINI_MIN_SERVER_DEADLINE_MS = max(
+    1000, _env_number("GEMINI_MIN_SERVER_DEADLINE_MS", 10_000)
+)
 # SDK-Versuche bei Transportfehlern (Timeout, Verbindungsabbruch, 408), inkl. des ersten
 GEMINI_TRANSPORT_ATTEMPTS = max(1, _env_number("GEMINI_TRANSPORT_ATTEMPTS", 2))
 
@@ -139,10 +145,10 @@ TTS_VOICE = _env("TTS_VOICE", "Orus")  # Prebuilt-Stimme für den Polizeifunk ("
 # Sammelfenster nach dem ersten Trigger-Event. Regel: mindestens 5 s.
 AGENT_DEBOUNCE_S = max(5.0, _env_number("AGENT_DEBOUNCE_S", 5.0, float))
 POLICE_MIN_INTERVAL_S = max(1.0, _env_number("POLICE_MIN_INTERVAL_S", 8.0, float))
-# Deadline pro Agent-Zyklus, danach greift der Fallback. Im Spiel kein Backoff.
-# 10 s ist das Minimum der API für die Server-Deadline (Live-Check 2026-11-14:
-# 6 s -> 400 "Minimum allowed deadline is 10s"). Kleinere Werte erzwingen den Fallback.
-AGENT_DEADLINE_MS = max(500, _env_number("AGENT_DEADLINE_MS", 10_000))
+# Spiel-Deadline pro Agent-Request/-Zyklus, danach greift der Fallback. Im Spiel kein Backoff.
+# Lokal durchgesetzt (gemini.agenerate, runner); an Gemini geht als Server-Deadline
+# mindestens GEMINI_MIN_SERVER_DEADLINE_MS (die API lehnt < 10 s mit 400 ab).
+AGENT_DEADLINE_MS = max(500, _env_number("AGENT_DEADLINE_MS", 6000))
 AGENT_ATTEMPTS = max(1, _env_number("AGENT_ATTEMPTS", 1))  # Versuche pro Modell
 
 # --- Fahndung und Clamps (Scheibe 2: Polizei) ---------------------------------
@@ -154,10 +160,12 @@ RADIO_MAX_CHARS = max(20, _env_number("RADIO_MAX_CHARS", 160))
 
 # --- Quest und Maps (Scheibe 3: Quest) ----------------------------------------
 QUEST_MAX_STEPS = max(1, _env_number("QUEST_MAX_STEPS", 3))  # Requests pro Gespräch
-QUEST_DEADLINE_MS = max(500, _env_number("QUEST_DEADLINE_MS", 8000))
+QUEST_DEADLINE_MS = max(
+    500, _env_number("QUEST_DEADLINE_MS", 8000)
+)  # lokal, ganzes Gespräch
 QUEST_MAX_TARGETS = max(1, _env_number("QUEST_MAX_TARGETS", 5))  # Gegner pro Quest
 MAPS_CACHE_PATH = _env_path("MAPS_CACHE_PATH", "cache/maps_facts.json")
 
 # --- TTS (Scheibe 3: Quest) ---------------------------------------------------
-TTS_DEADLINE_MS = max(500, _env_number("TTS_DEADLINE_MS", 8000))
+TTS_DEADLINE_MS = max(500, _env_number("TTS_DEADLINE_MS", 8000))  # lokal (TTS gekürzt)
 TTS_CACHE_DIR = _env_path("TTS_CACHE_DIR", "cache/tts")

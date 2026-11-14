@@ -43,7 +43,7 @@ def get_client() -> genai.Client:
     return genai.Client(
         api_key=os.environ.get("GEMINI_API_KEY"),
         http_options=types.HttpOptions(
-            timeout=config.GEMINI_TIMEOUT_MS,
+            timeout=max(config.GEMINI_TIMEOUT_MS, config.GEMINI_MIN_SERVER_DEADLINE_MS),
             retry_options=types.HttpRetryOptions(
                 attempts=config.GEMINI_TRANSPORT_ATTEMPTS,
                 initial_delay=2.0,
@@ -104,13 +104,25 @@ def live_enabled() -> bool:
     return config.AGENTS_MODE == "live"
 
 
+def server_deadline_ms(timeout_ms: int | None) -> int | None:
+    """Deadline, die an Gemini geht: nie unter GEMINI_MIN_SERVER_DEADLINE_MS.
+
+    Die API lehnt kürzere Deadlines mit 400 "Minimum allowed deadline is 10s" ab.
+    Kürzere Spiel-Deadlines setzt agenerate() lokal durch.
+    """
+    if timeout_ms is None:
+        return None
+    return max(config.GEMINI_MIN_SERVER_DEADLINE_MS, timeout_ms)
+
+
 def _with_timeout(
     gen_config: types.GenerateContentConfig | None, timeout_ms: int | None
 ) -> types.GenerateContentConfig | None:
-    """Deadline pro Request setzen. Das SDK schickt sie auch als X-Server-Timeout."""
-    if timeout_ms is None:
+    """Server-Deadline pro Request setzen. Das SDK schickt sie als X-Server-Timeout."""
+    deadline = server_deadline_ms(timeout_ms)
+    if deadline is None:
         return gen_config
-    options = types.HttpOptions(timeout=timeout_ms)
+    options = types.HttpOptions(timeout=deadline)
     if gen_config is None:
         return types.GenerateContentConfig(http_options=options)
     return gen_config.model_copy(update={"http_options": options})
@@ -133,7 +145,8 @@ def generate(
 
     - agent: Name für Log und Overlay.
     - attempts: Versuche pro Modell (Default GEMINI_RETRY_ATTEMPTS), Backoff dazwischen.
-    - timeout_ms: Deadline pro Request (Default GEMINI_TIMEOUT_MS des Clients).
+    - timeout_ms: Deadline pro Request (Default GEMINI_TIMEOUT_MS des Clients). An Gemini
+      geht max(GEMINI_MIN_SERVER_DEADLINE_MS, timeout_ms); kürzer nur lokal über agenerate().
     - use_fallback_model: False für Spiel-Agenten (Fallback-Modell ist zu langsam).
 
     Fehler (alle als HTTPException):
@@ -221,6 +234,24 @@ def generate(
     )
 
 
-async def agenerate(*args, **kwargs) -> tuple[types.GenerateContentResponse, str]:
-    """generate() im Thread-Pool, damit der Event-Loop (Spiel, WebSocket) nie blockiert."""
-    return await asyncio.to_thread(generate, *args, **kwargs)
+async def agenerate(
+    *args, timeout_ms: int | None = None, **kwargs
+) -> tuple[types.GenerateContentResponse, str]:
+    """generate() im Thread-Pool, damit der Event-Loop (Spiel, WebSocket) nie blockiert.
+
+    timeout_ms ist die Spiel-Deadline und wird hier lokal durchgesetzt (asyncio). An Gemini
+    geht mindestens GEMINI_MIN_SERVER_DEADLINE_MS. Ist die lokale Deadline um, kommt sofort
+    HTTPException 504, damit der Fallback greift; der Request läuft im Thread zu Ende,
+    seine Logzeile erscheint später, das Ergebnis wird verworfen.
+    """
+    call = asyncio.to_thread(generate, *args, timeout_ms=timeout_ms, **kwargs)
+    if timeout_ms is None:
+        return await call
+    try:
+        return await asyncio.wait_for(call, timeout_ms / 1000)
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            504,
+            f"Lokale Spiel-Deadline {timeout_ms} ms überschritten "
+            f"(Server-Deadline {server_deadline_ms(timeout_ms)} ms)",
+        ) from None

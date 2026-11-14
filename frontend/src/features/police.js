@@ -14,8 +14,16 @@
  * - Autos sind Kampfziele (`police`, hp 3); ein zerstörtes Auto bleibt kurz als Wrack liegen
  * Bewegung: Rapier-Kinematic-Character-Controller gegen Gebäude (ctx.physics), ohne Schwerkraft.
  * Steckt ein Auto fest oder ist es zu weit weg, wird es auf einen Straßenpunkt nahe am Spieler gesetzt.
+ * Dispatch nach unit_type: "foot" → Fußstreife (police/footCop.js; steigt aus einem Streifenwagen
+ * < 20 m vom Spieler aus, der dafür kurz hält), "tank" → Panzer (police/tank.js: Mesh und Kennwerte,
+ * fährt hier mit 60 % Tempo direkt auf den Spieler und schiebt), sonst ("patrol", "swat",
+ * unbekannt) Streifenwagen.
  */
 import { createSiren } from '../audio/siren.js';
+import { createFootCops } from '../police/footCop.js';
+import {
+  aimTurret, createTankModel, TANK_HALF_EXTENTS, TANK_HP, TANK_SPEED_FACTOR, TANK_STOP_DIST,
+} from '../police/tank.js';
 
 const MAX_UNITS = 8;
 const SPAWN_MIN = 120;
@@ -30,6 +38,10 @@ const STUCK_S = 3;
 const WRECK_S = 8;
 const HOVER_Y = 0.8;
 const BLINK_HZ = 4;
+const DOOR_RANGE = 20; // Streifenwagen näher als das am Spieler: Fußstreife steigt dort aus
+const PARK_S = 3; // so lange hält der Wagen beim Aussteigen
+const CAR_HALF_EXTENTS = { x: 0.9, y: 0.6, z: 2.0 };
+const TANK_MASS = 40; // Rapier-Character-Masse: wie kräftig der Panzer dynamische Körper schiebt
 
 /** Tempo in m/s je Fahndungsstufe. @param {number} level */
 const speedFor = (level) => 9 + 3 * Math.max(1, level);
@@ -57,19 +69,30 @@ export function init(ctx) {
   let serial = 0;
   let blink = 0;
   const siren = createSiren();
+  const foot = createFootCops(ctx);
 
   /** POI zur ID (ctx.world.poi, falls vorhanden). */
   const poiById = (id) => (id ? (world.poi?.(id) ?? world.pois.find((p) => p.id === id)) : null);
 
-  /** Physik-Körper für ein Auto anlegen; ohne Physik läuft das Auto frei (Fallback). */
-  function createBody(x, z) {
+  /**
+   * Physik-Körper für ein Auto anlegen; ohne Physik läuft das Auto frei (Fallback).
+   * @param {number} x
+   * @param {number} z
+   * @param {boolean} [tank] Panzer: größerer Collider, schiebt dynamische Körper weg
+   */
+  function createBody(x, z, tank = false) {
     try {
       const body = physics.createRigidBody(
         RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, HOVER_Y, z),
       );
-      const collider = physics.createCollider(RAPIER.ColliderDesc.cuboid(0.9, 0.6, 2.0), body);
+      const h = tank ? TANK_HALF_EXTENTS : CAR_HALF_EXTENTS;
+      const collider = physics.createCollider(RAPIER.ColliderDesc.cuboid(h.x, h.y, h.z), body);
       const cc = physics.createCharacterController(0.05);
       cc.setSlideEnabled(true);
+      if (tank) {
+        cc.setApplyImpulsesToDynamicBodies?.(true);
+        cc.setCharacterMass?.(TANK_MASS);
+      }
       return { body, collider, cc };
     } catch (err) {
       console.warn('[police] Physik nicht verfügbar, fahre ohne Kollision', err);
@@ -106,16 +129,17 @@ export function init(ctx) {
   function spawnUnit(spawnPoint, tactic, unitType) {
     const index = ++serial;
     const id = `cop-${index}`;
-    const obj = models.car({ police: true });
+    const tank = unitType === 'tank';
+    const obj = tank ? createTankModel(ctx.three) : models.car({ police: true });
     if (unitType === 'swat') obj.scale.set(1.15, 1.2, 1.1);
     scene.add(obj);
     const u = {
-      id, obj, tactic, index, heading: 0, speed: 0, stuck: 0, holding: false,
-      pos: { x: spawnPoint.x, z: spawnPoint.z }, phys: createBody(spawnPoint.x, spawnPoint.z),
-      roadblock: null,
+      id, obj, tactic: tank ? 'chase' : tactic, index, heading: 0, speed: 0, stuck: 0, holding: false,
+      pos: { x: spawnPoint.x, z: spawnPoint.z }, phys: createBody(spawnPoint.x, spawnPoint.z, tank),
+      roadblock: null, tank,
     };
     place(u, spawnPoint);
-    combat.addTarget(obj, { id, kind: 'police', hp: 3, onKilled: () => wreck(u) });
+    combat.addTarget(obj, { id, kind: 'police', hp: tank ? TANK_HP : 3, onKilled: () => wreck(u) });
     units.set(id, u);
     return u;
   }
@@ -145,6 +169,25 @@ export function init(ctx) {
   /** Alle Einheiten weg (Level 0). */
   function clearAll() {
     for (const u of [...units.values()]) removeUnit(u);
+    foot.clear();
+  }
+
+  /**
+   * Nächster Streifenwagen < DOOR_RANGE vom Spieler; hält PARK_S an (Fußstreife steigt aus).
+   * @returns {{x: number, z: number, heading: number}|null}
+   */
+  function parkNearestCar() {
+    const p = player.position();
+    let best = null;
+    let bestD = DOOR_RANGE;
+    for (const u of units.values()) {
+      if (u.tank) continue;
+      const d = Math.hypot(p.x - u.pos.x, p.z - u.pos.z);
+      if (d < bestD) { best = u; bestD = d; }
+    }
+    if (!best) return null;
+    best.parked = PARK_S;
+    return { x: best.pos.x, z: best.pos.z, heading: best.heading };
   }
 
   /** Ziel der Taktik für ein Auto: {x, z, hold} (hold = dort stehen bleiben). */
@@ -182,10 +225,13 @@ export function init(ctx) {
     const dx = g.x - u.pos.x;
     const dz = g.z - u.pos.z;
     const d = Math.hypot(dx, dz);
-    const arrive = g.hold ? 2 : STOP_DIST;
+    const stop = u.tank ? TANK_STOP_DIST : STOP_DIST; // Panzer fährt bis an den Spieler (schieben)
+    const arrive = g.hold ? 2 : stop;
     let want = 0;
-    if (d > arrive && toPlayer > STOP_DIST * (g.hold ? 0.5 : 1)) {
-      want = Math.min(speedFor(level), d * 1.5);
+    if (u.parked > 0) {
+      u.parked -= dt; // Fußstreife steigt aus: stehen bleiben
+    } else if (d > arrive && toPlayer > stop * (g.hold ? 0.5 : 1)) {
+      want = u.tank ? speedFor(level) * TANK_SPEED_FACTOR : Math.min(speedFor(level), d * 1.5);
       u.heading += angleDiff(u.heading, Math.atan2(-dx, -dz)) * Math.min(1, 4 * dt);
     } else if (g.hold && typeof g.heading === 'number') {
       u.heading += angleDiff(u.heading, g.heading) * Math.min(1, 2 * dt);
@@ -206,7 +252,9 @@ export function init(ctx) {
       u.pos.z += mz;
     }
     // Festgefahren (Wand): nach STUCK_S auf eine Straße nahe am Spieler setzen.
-    if (want > 2 && moved < want * dt * 0.2) u.stuck += dt; else u.stuck = Math.max(0, u.stuck - dt);
+    // Ein Panzer, der am Spieler hängt, schiebt gerade: das ist kein Festfahren.
+    const pushing = u.tank && toPlayer < 10;
+    if (want > 2 && !pushing && moved < want * dt * 0.2) u.stuck += dt; else u.stuck = Math.max(0, u.stuck - dt);
     if (u.stuck > STUCK_S) place(u, world.randomRoadPoint(p, 40, 90));
     u.obj.position.set(u.pos.x, 0, u.pos.z);
     u.obj.rotation.y = u.heading;
@@ -220,6 +268,11 @@ export function init(ctx) {
 
   net.on('spawn_units', (payload) => {
     if (payload.faction !== 'police') return; // Gang-Boss gestrichen
+    if (payload.unit_type === 'foot') {
+      const n = foot.spawn(payload.count, parkNearestCar());
+      if (n > 0) hud.toast(`${n} officer${n > 1 ? 's' : ''} on foot dispatched`, 2500);
+      return;
+    }
     const free = Math.max(0, MAX_UNITS - units.size);
     const count = Math.min(payload.count, free);
     const poi = poiById(payload.near_poi_id);
@@ -230,7 +283,8 @@ export function init(ctx) {
     }
     if (count > 0) {
       const where = poi ? ` near ${poi.name}` : '';
-      hud.toast(`${count} police unit${count > 1 ? 's' : ''} dispatched${where} (${payload.tactic})`, 2500);
+      const what = payload.unit_type === 'tank' ? 'police tank' : 'police unit';
+      hud.toast(`${count} ${what}${count > 1 ? 's' : ''} dispatched${where} (${payload.tactic})`, 2500);
     }
   });
 
@@ -241,10 +295,12 @@ export function init(ctx) {
     let nearest = Infinity;
     for (const u of units.values()) {
       drive(u, dt);
+      if (u.tank) aimTurret(u.obj, p.x - u.pos.x, p.z - u.pos.z);
       nearest = Math.min(nearest, Math.hypot(p.x - u.pos.x, p.z - u.pos.z));
       models.setLightbar(u.obj, u.index % 2 ? on : !on); // rot/blau im Wechsel, jedes zweite Auto gegenläufig
     }
     siren.update(level, nearest);
+    foot.update(dt);
     for (let i = wrecks.length - 1; i >= 0; i--) {
       wrecks[i].ttl -= dt;
       if (wrecks[i].ttl <= 0) { scene.remove(wrecks[i].obj); wrecks.splice(i, 1); }

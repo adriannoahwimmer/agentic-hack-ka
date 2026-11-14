@@ -55,6 +55,34 @@ FIXTURE = {
             ring((0, 400), (40, 400), (40, 440)),
         ),
         way(20, {"leisure": "park"}, ring((-100, -100), (-50, -100), (-50, -50))),
+        # Gebäude mit zwei Innenhöfen; ein Innenweg liegt außerhalb und entfällt.
+        {
+            "type": "relation",
+            "id": 40,
+            "tags": {"type": "multipolygon", "building": "yes"},
+            "members": [
+                {
+                    "type": "way",
+                    "role": "outer",
+                    "geometry": ring((300, 0), (340, 0), (340, 40), (300, 40)),
+                },
+                {
+                    "type": "way",
+                    "role": "inner",
+                    "geometry": ring((305, 5), (305, 15), (315, 15), (315, 5)),
+                },
+                {
+                    "type": "way",
+                    "role": "inner",
+                    "geometry": ring((320, 20), (330, 20), (330, 30), (320, 30)),
+                },
+                {
+                    "type": "way",
+                    "role": "inner",
+                    "geometry": ring((500, 500), (510, 500), (510, 510)),
+                },
+            ],
+        },
         {
             "type": "relation",
             "id": 30,
@@ -151,13 +179,32 @@ def test_areas_include_plaza_park_and_multipolygon(baked):
     assert areas["way/20"]["kind"] == "park"
     garden = areas["relation/30"]
     assert garden["kind"] == "garden"
-    assert len(garden["pts"]) == 4  # vier Außenwege zu einem Ring, inner ignoriert
+    assert len(garden["pts"]) == 4  # vier Außenwege zu einem Ring
     assert bake_osm.signed_area(garden["pts"]) == pytest.approx(3600.0, abs=1)
+    assert len(garden["holes"]) == 1  # Innenring wird zum Loch
+    assert bake_osm.signed_area(garden["holes"][0]) == pytest.approx(-50.0, abs=1)
+
+
+def test_building_relation_keeps_courtyards(baked):
+    b = by_id(baked["buildings"])["relation/40"]
+    assert bake_osm.signed_area(b["pts"]) == pytest.approx(1600.0, abs=1)
+    assert len(b["holes"]) == 2  # der Innenweg außerhalb des Außenrings entfällt
+    for hole in b["holes"]:
+        assert hole[0] != hole[-1]
+        assert bake_osm.signed_area(hole) == pytest.approx(
+            -100.0, abs=1
+        )  # gegen den Uhrzeigersinn
+
+
+def test_ways_have_no_holes(baked):
+    assert all(
+        "holes" not in b for b in baked["buildings"] if b["id"].startswith("way/")
+    )
 
 
 def test_output_sorted_and_deterministic(baked):
     ids = [b["id"] for b in baked["buildings"]]
-    assert ids == ["way/1", "way/2", "way/3"]
+    assert ids == ["relation/40", "way/1", "way/2", "way/3"]
     assert bake_osm.dumps(bake_osm.bake(FIXTURE)) == bake_osm.dumps(baked)
 
 
@@ -185,7 +232,7 @@ def test_cli_bake_is_offline(tmp_path, monkeypatch):
     written = json.loads(
         (tmp_path / "city" / "buildings.json").read_text(encoding="utf-8")
     )
-    assert [b["id"] for b in written] == ["way/1", "way/2", "way/3"]
+    assert [b["id"] for b in written] == ["relation/40", "way/1", "way/2", "way/3"]
 
 
 @pytest.mark.skipif(not bake_osm.RAW_PATH.exists(), reason="raw.json noch nicht geholt")

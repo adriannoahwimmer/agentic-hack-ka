@@ -196,6 +196,7 @@ Vorlage für einen neuen Abschnitt:
   - `index.js`: baut `ctx`, Reihenfolge pro Frame: Physik (fester Schritt) → Spieler/Kamera → Kampf/Events → Fußgänger → `ctx.onUpdate` → Rendern
   - `renderer.js` (Szene, Licht, Nebel), `physics.js` (Rapier, 1/60 s, `fixed(fn)` vor jedem Schritt), `input.js`, `player.js`, `combat.js`, `models.js`, `hud.js`, `attribution.js`, `world.js`, `city.js`, `pedestrians.js`
 - Schnittstellen:
+  - Empfängt `set_wanted_level` und zeigt die Sterne im HUD (`police.js` darf zusätzlich reagieren, `setWanted` ist idempotent). `error` vom Server landet als Warnung in der Konsole.
   - Sendet alle 5 Events: `player_position` (gedrosselt 2 Hz), `shot_fired` (pro 500 ms gebündelt), `npc_killed` (nur combat), `zone_entered` (`previous_zone_id` = letzte Zone, in der der Spieler war, sonst null), `vehicle_stolen` (Fahrzeuge, W3).
   - `heading`: Rotation um y; Blickrichtung (−sin h, −cos h) in (x, z), also h = 0 → Norden. Modelle schauen nach −z.
   - Zusätze zu `ctx` (additiv, Stand W2):

@@ -41,6 +41,9 @@ export async function createCore({ net }) {
     console.info(`[net] ${ok ? 'connected' : 'disconnected'}`);
   });
   net.on('*', (payload, env) => console.debug('[net] action', env.type, payload));
+  // Sterne zeigt schon der Kern (Phase-1-Kriterium); police.js darf zusätzlich reagieren.
+  net.on('set_wanted_level', (p) => hud.setWanted(p.level));
+  net.on('error', (p) => console.warn('[net] server error', p.code, p.message));
 
   const [physics, data] = await Promise.all([createPhysics(), loadCityData()]);
   const { RAPIER, world: physicsWorld } = physics;

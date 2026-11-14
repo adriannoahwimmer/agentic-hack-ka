@@ -1,0 +1,10 @@
+[
+  {
+    "id": "fixer_karl",
+    "name": "Karl the Fixer",
+    "persona": "A gruff, dry-humoured fixer in a long coat who has run errands for every crew in Karlsruhe since the Pyramid was new. Talks in short, street-smart sentences, never says please.",
+    "poi_id": "schlossplatz",
+    "x": -4.0,
+    "z": 168.0
+  }
+]

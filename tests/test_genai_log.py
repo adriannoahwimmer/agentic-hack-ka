@@ -110,7 +110,7 @@ def test_prompt_is_truncated(fake_gemini, genai_log_lines, monkeypatch):
 
 
 def test_api_key_never_in_log(fake_gemini, monkeypatch):
-    secret = "AIzaTEST-not-a-real-key-123"
+    secret = "dummy-secret-key-for-log-test-123"
     monkeypatch.setenv("GEMINI_API_KEY", secret)
     fake_gemini([api_error(400, "bad"), text_response("ok")])
     with pytest.raises(Exception):  # noqa: B017 - 400 -> HTTPException 502

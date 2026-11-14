@@ -186,10 +186,50 @@ Vorlage für einen neuen Abschnitt:
   - `static/` ist bis Phase 4 gitignored. Ohne Build zeigt `/play/` 404; der Loader loggt das.
 
 ### Frontend-Kern (Scheibe Welt)
-_noch leer_
+- Zweck: baut `ctx` (Vertrag, `frontend/src/types.js`) und die Spielschleife. Bühne, Spieler, Ballern und alle Client-Events.
+- Use-Cases:
+  - Spieler läuft (WASD, Shift sprintet) mit Third-Person-Kamera (Maus-Orbit im Pointer-Lock, Kamera weicht Wänden aus) und kann nicht durch Gebäude gehen.
+  - Linksklick schießt (1 = Pistole, 2 = SMG mit Dauerfeuer). Gebäude blockieren Schüsse.
+  - Fußgänger laufen auf Straßen, fliehen bei Schüssen und sind Ziele (`civilian`, hp 1).
+  - Feature-Scheiben docken über `init(ctx)` an (Polizei, Quest, Overlay).
+- Dateien (`frontend/src/core/`):
+  - `index.js`: baut `ctx`, Reihenfolge pro Frame: Physik (fester Schritt) → Spieler/Kamera → Kampf/Events → Fußgänger → `ctx.onUpdate` → Rendern
+  - `renderer.js` (Szene, Licht, Nebel), `physics.js` (Rapier, 1/60 s, `fixed(fn)` vor jedem Schritt), `input.js`, `player.js`, `combat.js`, `models.js`, `hud.js`, `attribution.js`, `world.js`, `city.js`, `pedestrians.js`
+- Schnittstellen:
+  - Empfängt `set_wanted_level` und zeigt die Sterne im HUD (`police.js` darf zusätzlich reagieren, `setWanted` ist idempotent). `error` vom Server landet als Warnung in der Konsole.
+  - Sendet alle 5 Events: `player_position` (gedrosselt 2 Hz), `shot_fired` (pro 500 ms gebündelt), `npc_killed` (nur combat), `zone_entered` (`previous_zone_id` = letzte Zone, in der der Spieler war, sonst null), `vehicle_stolen` (Fahrzeuge, W3).
+  - `heading`: Rotation um y; Blickrichtung (−sin h, −cos h) in (x, z), also h = 0 → Norden. Modelle schauen nach −z.
+  - Zusätze zu `ctx` (additiv, Stand W2):
+    - `ctx.combat.onShot(fn({x, z, weapon})) -> off`: lokaler Beobachter für jeden Schuss (z. B. Gegner reagieren lassen).
+    - `ctx.world.poi(id)`, `ctx.world.roadPoints` (Punkte alle 10 m auf befahrbaren Straßen und Fußgängerzonen, mit `heading`), `ctx.world.bounds`.
+    - `ctx.world.randomRoadPoint()` liefert zusätzlich `heading` (Straßenrichtung).
+    - `ctx.hud.wanted()`, `setConnected(ok)`, `setWeapon(name)`, `hitMarker()`, `setStartVisible(v)`.
+    - `models.car()` setzt `userData.lightbar` = [rot, blau] (Polizei) und `userData.wheels`; `models.person()` setzt `userData.legs`/`arms`. `animateWalk(obj, speed, dt)` ist aus `core/models.js` importierbar.
+  - `ctx._core` (Spieler, Physik, Kampf) ist intern und kein Vertrag. Im Vite-Dev-Server hängt `ctx` an `window.__ctx` (Konsole, Smoke-Tests).
+  - Debug: `/play/?view=top` zeigt die Stadt von oben.
+- Agent und Modell: keine (0 Gemini-Requests).
+- Offene Punkte:
+  - Fahrzeuge (W3, `core/vehicle.js`) folgen, `ctx.player.inVehicle()` ist bis dahin immer false.
+  - Der Spieler schwebt 6 cm über dem Boden und wird nur horizontal kollidiert. Mit Schwerkraft sank die Kapsel in den Boden-Collider und blieb hängen. Die Stadt ist flach, also gibt es keine Stufen.
+  - Bundle ca. 5 MB (Rapier-WASM inline). Lokal unkritisch, für Codesphere prüfen.
 
 ### OSM-Stadt (Scheibe Welt)
-_noch leer_
+- Zweck: echtes Karlsruhe rund ums Schloss als Low-Poly-Stadt, vorgebacken, ohne OSM-Abfragen zur Laufzeit.
+- Use-Cases:
+  - Einmal holen: `python scripts/bake_osm.py --fetch` (Overpass-Mirror, bei Fehler OSM-API 0.6 in 2 × 2 Kacheln, `--source overpass|osmapi|auto`). Ergebnis `data/osm/raw.json` (eingecheckt, ca. 1,5 MB).
+  - Backen (offline, Default): `python scripts/bake_osm.py` → `frontend/public/city/{buildings,roads,areas}.json`. Der Bake ist deterministisch (byte-gleich, Test).
+- Dateien: `scripts/bake_osm.py`, `data/osm/raw.json`, `frontend/public/city/*.json`, `frontend/src/core/city.js`, `tests/test_bake_osm.py`
+- Formate (Weltkoordinaten über `geo.py`, Meter, gerundet auf 0,1 m):
+  - `buildings.json`: `[{id, h, pts}]`. `id` ist die OSM-Referenz (`way/123`, Teile von Multipolygonen `way/123#1`). Höhe aus `height`, sonst `building:levels` × 3,2 m, sonst 12 m (geclampt 2,5–120 m). Ring offen, im Uhrzeigersinn von oben (Shoelace in (x, z) > 0), Douglas-Peucker 0,5 m.
+  - `roads.json`: `[{id, kind, w, pts}]`, `kind` = OSM-`highway`, `w` aus `width` oder Tabelle. Ohne Gehsteige, Querungen, Indoor-Korridore und Baustellen.
+  - `areas.json`: `[{id, kind, pts}]`, `kind` aus park, garden, grass, parking, plaza.
+  - Budget: buildings ≤ 1,5 MB, roads ≤ 0,5 MB, areas ≤ 0,5 MB, raw ≤ 8 MB, sonst Abbruch. Stand 2026-11-14: 959 Gebäude (136 KB), 1546 Straßen (156 KB), 236 Flächen (54 KB).
+- Darstellung (`city.js`): Gebäude, Straßen und Flächen je ein Mesh mit Vertex-Farben (4 Draw-Calls mit Boden). Gebäude der POIs (`osm_ref`) bekommen Landmark-Farben. Collider: ein statisches Trimesh aus allen Wänden, Boden-Quader und vier Randwände.
+- Schnittstellen: keine Nachrichten. Liest `data/pois.json` (nur lesend).
+- Lizenz: © OpenStreetMap contributors (ODbL). Der Hinweis mit Link auf openstreetmap.org/copyright ist unten rechts immer sichtbar (`attribution.js`).
+- Offene Punkte:
+  - Overpass am 2026-11-14 ab 13:30 nicht nutzbar (mail.ru 504, osm.ch Laufzeitfehler, overpass-api.de und kumi.systems keine Verbindung). `raw.json` stammt deshalb aus der OSM-API 0.6.
+  - Überlappende Grünflächen zeigen aus großer Höhe Z-Fighting. In Spielerhöhe ist das unauffällig.
 
 ### Spielzustand (Scheibe Polizei)
 _noch leer_

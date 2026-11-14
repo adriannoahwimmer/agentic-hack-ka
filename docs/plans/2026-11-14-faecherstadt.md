@@ -616,7 +616,7 @@ Kinematisches Arcade-Auto statt Rapier-Vehicle-Controller: Fahrradmodell, Charac
 - [x] Laufen ohne Durchdringen von Gebäuden, Schießen trifft Fußgänger, `npc_killed` erscheint im Backend-Log (`AGENTS_MODE=offline`).
 - [x] `/debug/action` mit `set_wanted_level` → Sterne im HUD.
 - [x] Checkpoint: Spieler, Ballern, Events und `ctx` sind auf main gemergt (PR #7, Merge-Commit `7157031`, W1 + W2 + Fußgänger aus W3).
-- [ ] Auto: einsteigen, fahren, Kollision mit Gebäude, aussteigen. `vehicle_stolen` kommt an.
+- [x] Auto: einsteigen, fahren, Kollision mit Gebäude, aussteigen. `vehicle_stolen` kommt an. (PR #10, Merge-Commit `b2960ab`, zusammen mit dem Look-Pass: HDRI, Schatten, ACES, Fassaden, GTAO, Bloom; Rapier-Vehicle-Controller, keine Kürzung nötig)
 
 ---
 
@@ -846,7 +846,7 @@ Das Agent-Log-Overlay macht die Agenten sichtbar. Dazu kommen README, Sicherheit
    - Agentenbeschreibung
    - APIs, Frameworks und Tools: Gemini API über google-genai (Function Calling, Maps Grounding, TTS, genutzte Modelle), FastAPI, uvicorn, Pydantic, Three.js, Rapier, Vite, OpenStreetMap/Overpass (ODbL), Claude Code, ruff, pytest, gitleaks, optional Codesphere
    - Kosten-Guards (Budget, Offline-Modus)
-   - Lizenz- und Attributionshinweise (OSM, Google Maps)
+   - Lizenz- und Attributionshinweise (OSM, Google Maps, HDRI „Kloofendal 48d Partly Cloudy (Pure Sky)“ von Poly Haven, CC0)
 3. **`test.py` löschen.** Den letzten Stand von CLAUDE.md und `agent_docs` prüfen.
 4. **Secret-Scan (ca. 10 min)**
    - `gitleaks detect --source . --log-opts="--all"` (Binary per `winget install gitleaks` oder aus dem GitHub-Release)

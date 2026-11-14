@@ -191,13 +191,14 @@ Vorlage für einen neuen Abschnitt:
   - Spieler läuft (WASD, Shift sprintet) mit Third-Person-Kamera (Maus-Orbit im Pointer-Lock, Kamera weicht Wänden aus) und kann nicht durch Gebäude gehen.
   - Linksklick schießt (1 = Pistole, 2 = SMG mit Dauerfeuer). Gebäude blockieren Schüsse.
   - Fußgänger laufen auf Straßen, fliehen bei Schüssen und sind Ziele (`civilian`, hp 1).
+  - Auto klauen und fahren: F steigt in ein geparktes Auto (≤ 4 m) ein und aus. W/S Gas, Bremse, rückwärts, A/D lenken, Leertaste Handbremse, R aufrichten (automatisch nach 2 s auf dem Dach). Ab 4 m/s überfährt das Auto Fußgänger (`npc_killed`).
   - Feature-Scheiben docken über `init(ctx)` an (Polizei, Quest, Overlay).
 - Dateien (`frontend/src/core/`):
   - `index.js`: baut `ctx`, Reihenfolge pro Frame: Physik (fester Schritt) → Spieler/Kamera → Kampf/Events → Fußgänger → `ctx.onUpdate` → Rendern
-  - `renderer.js` (Szene, Licht, Nebel), `physics.js` (Rapier, 1/60 s, `fixed(fn)` vor jedem Schritt), `input.js`, `player.js`, `combat.js`, `models.js`, `hud.js`, `attribution.js`, `world.js`, `city.js`, `pedestrians.js`
+  - `renderer.js` (Szene, Licht, Nebel), `physics.js` (Rapier, 1/60 s, `fixed(fn)` vor jedem Schritt), `input.js`, `player.js`, `combat.js`, `models.js`, `hud.js`, `attribution.js`, `world.js`, `city.js`, `pedestrians.js`, `vehicle.js` (Rapier `DynamicRayCastVehicleController`, 8 geparkte Zivilautos, Verfolgerkamera)
 - Schnittstellen:
   - Empfängt `set_wanted_level` und zeigt die Sterne im HUD (`police.js` darf zusätzlich reagieren, `setWanted` ist idempotent). `error` vom Server landet als Warnung in der Konsole.
-  - Sendet alle 5 Events: `player_position` (gedrosselt 2 Hz), `shot_fired` (pro 500 ms gebündelt), `npc_killed` (nur combat), `zone_entered` (`previous_zone_id` = letzte Zone, in der der Spieler war, sonst null), `vehicle_stolen` (Fahrzeuge, W3).
+  - Sendet alle 5 Events: `player_position` (gedrosselt 2 Hz), `shot_fired` (pro 500 ms gebündelt), `npc_killed` (nur combat), `zone_entered` (`previous_zone_id` = letzte Zone, in der der Spieler war, sonst null), `vehicle_stolen` (beim ersten Einsteigen pro Auto, `vehicle_kind` `civilian`).
   - `heading`: Rotation um y; Blickrichtung (−sin h, −cos h) in (x, z), also h = 0 → Norden. Modelle schauen nach −z.
   - Zusätze zu `ctx` (additiv, Stand W2):
     - `ctx.combat.onShot(fn({x, z, weapon})) -> off`: lokaler Beobachter für jeden Schuss (z. B. Gegner reagieren lassen).
@@ -209,7 +210,7 @@ Vorlage für einen neuen Abschnitt:
   - Debug: `/play/?view=top` zeigt die Stadt von oben.
 - Agent und Modell: keine (0 Gemini-Requests).
 - Offene Punkte:
-  - Fahrzeuge (W3, `core/vehicle.js`) folgen, `ctx.player.inVehicle()` ist bis dahin immer false.
+  - Fahrzeuge: Vorzeichen per Probe ermittelt. `currentVehicleSpeed() < 0` heißt vorwärts (−z), positive Lenkung dreht nach links. Vorwärtsachse ist z (`setIndexForwardAxis = 2`). Polizeiautos der Feature-Scheibe sind davon unabhängig (kinematisch).
   - Der Spieler schwebt 6 cm über dem Boden und wird nur horizontal kollidiert. Mit Schwerkraft sank die Kapsel in den Boden-Collider und blieb hängen. Die Stadt ist flach, also gibt es keine Stufen.
   - Bundle ca. 5 MB (Rapier-WASM inline). Lokal unkritisch, für Codesphere prüfen.
 
@@ -230,6 +231,23 @@ Vorlage für einen neuen Abschnitt:
 - Offene Punkte:
   - Overpass am 2026-11-14 ab 13:30 nicht nutzbar (mail.ru 504, osm.ch Laufzeitfehler, overpass-api.de und kumi.systems keine Verbindung). `raw.json` stammt deshalb aus der OSM-API 0.6.
   - Überlappende Grünflächen zeigen aus großer Höhe Z-Fighting. In Spielerhöhe ist das unauffällig.
+
+### Look-Pass (Scheibe Welt)
+- Zweck: Die Low-Poly-Stadt soll im Demo-Video gut aussehen, ohne core/ umzubauen. Ein eigenes Modul `frontend/src/look/`, das `core/index.js` einmal aufruft (`createLook`, dann pro Frame `update(dt)` und `render()`).
+- Use-Cases:
+  - HDRI-Himmel mit Wolken und bildbasiertem Licht. Die Sonnenrichtung (hellster Texel, mindestens 28° hoch) und die Nebelfarbe (Horizont-Mittel) kommen aus dem HDRI, damit Himmel, Schatten und Nebel zusammenpassen.
+  - Sonne mit Schatten (PCF, 2048², ±90 m), der Bereich folgt dem Spieler auf einem 2-m-Raster gegen Flimmern. ACES-Tonemapping, Belichtung 0,62, Nebel `FogExp2`.
+  - Prozedurale Fassaden (`look/facade.js`): Fenster- und Geschossraster per Shader aus Weltkoordinaten (3,2 m Geschoss, 3 m Achse), Schaufenster im Erdgeschoss. Glatte Scheiben spiegeln das HDRI.
+  - Post-FX (`look/post.js`): MSAA-Render-Target, GTAO (Umgebungsverdeckung), Bloom (nur HDR-Helles, z. B. Mündungsfeuer ×8), Output-Pass.
+  - Tasten: **P** schaltet alle Post-FX, **O** nur die AO. Der Browser merkt sich P (localStorage, robust gegen Fehler). `?fx=0` startet ohne Post-FX.
+  - Sicherung: Liegen die Frames mit AO länger als 3 s über 25 ms (nach 5 s Schonfrist), schaltet sich AO ab, mit Toast.
+- Dateien: `frontend/src/look/{index,env,post,facade}.js`, `frontend/public/look/kloofendal_48d_partly_cloudy_puresky_1k.hdr` (1,4 MB)
+- Schnittstellen: keine Nachrichten. Alle `MeshLambertMaterial`s in der Szene werden zu `MeshStandardMaterial` mit denselben `color`-/`emissive`-Objekten, auch die später von Features hinzugefügten (Scan alle 0,5 s). Features können also weiter Lambert verwenden, Farbänderungen (Blaulicht) wirken weiter. Meshes werfen und empfangen Schatten, die Stadtflächen empfangen nur. `MeshBasicMaterial` bleibt unverändert.
+- Debug: `?start=0` blendet das Start-Overlay aus (Screenshots, Video).
+- Lizenz: HDRI „Kloofendal 48d Partly Cloudy (Pure Sky)“ von Poly Haven, CC0 (polyhaven.com). Ins README (Phase 4) aufnehmen.
+- Offene Punkte:
+  - Die Bildrate auf dem Demo-Laptop mit Post-FX ist noch nicht gemessen (headless nur Software-Rendering). Bei Bedarf startet das Video mit `?fx=0`, oder AO bleibt aus.
+  - `PCFSoftShadowMap` gibt es in three r187 nicht mehr, deshalb PCF mit `shadow.radius`.
 
 ### Spielzustand (Scheibe Polizei)
 _noch leer_

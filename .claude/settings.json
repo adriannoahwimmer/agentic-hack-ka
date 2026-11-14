@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "powershell",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"$env:CLAUDE_PROJECT_DIR/scripts/check.ps1\" -Hook; exit $LASTEXITCODE",
+            "timeout": 120
+          }
+        ]
+      }
+    ]
+  }
+}

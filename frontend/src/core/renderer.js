@@ -29,8 +29,11 @@ export function createRenderer(container) {
   const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 1200);
   camera.position.set(0, 30, 200);
 
-  scene.add(new THREE.HemisphereLight(0xdfeeff, 0x6b6450, 1.6));
+  const hemi = new THREE.HemisphereLight(0xdfeeff, 0x6b6450, 1.6);
+  hemi.name = 'hemi';
+  scene.add(hemi);
   const sun = new THREE.DirectionalLight(0xfff1d6, 1.6);
+  sun.name = 'sun'; // look/ richtet sie am HDRI aus und gibt ihr Schatten
   sun.position.set(-300, 400, 200); // Sonne im Südwesten, Nachmittag
   scene.add(sun);
 

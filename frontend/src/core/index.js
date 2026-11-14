@@ -15,8 +15,10 @@ import { createCombat } from './combat.js';
 import { createHud } from './hud.js';
 import { createInput } from './input.js';
 import * as models from './models.js';
+import { createLook } from '../look/index.js';
 import { createPedestrians } from './pedestrians.js';
 import { createPhysics } from './physics.js';
+import { createVehicles } from './vehicle.js';
 import { createPlayer } from './player.js';
 import { createRenderer } from './renderer.js';
 import { createWorld } from './world.js';
@@ -60,13 +62,18 @@ export async function createCore({ net }) {
   });
   const combat = createCombat({ THREE, scene, camera, RAPIER, world: physicsWorld, input, hud, net, player, worldApi });
   const pedestrians = createPedestrians({ scene, models, worldApi, combat, player });
+  const vehicles = createVehicles({
+    THREE, scene, camera, RAPIER, world: physicsWorld, fixed: physics.fixed, input, models, player, worldApi, net, hud, combat, pedestrians,
+  });
+
+  const look = await createLook({ renderer, scene, camera, input, hud, player, overview });
 
   // Start-Overlay bis zum Pointer-Lock; danach nur noch bei Esc.
   document.addEventListener('pointerlockchange', () => hud.setStartVisible(!input.locked()));
 
   const updates = new Set();
+  if (overview || new URLSearchParams(location.search).get('start') === '0') hud.setStartVisible(false);
   if (overview) {
-    hud.setStartVisible(false);
     scene.fog = null;
     camera.far = 4000;
     camera.updateProjectionMatrix();
@@ -105,6 +112,7 @@ export async function createCore({ net }) {
         player.update(dt);
         combat.update(dt);
         pedestrians.update(dt);
+        vehicles.update(dt);
         for (const fn of updates) {
           try { fn(dt, now / 1000); } catch (err) { console.error('[core] onUpdate', err); }
         }
@@ -112,12 +120,13 @@ export async function createCore({ net }) {
           camera.position.set(0, 1100, 260);
           camera.lookAt(0, 0, 220);
         }
-        renderer.render(scene, camera);
+        look.update(dt);
+        look.render();
       });
     },
   };
   // Interne Teile für weitere core-Module (Fahrzeuge, Fußgänger), nicht Teil des Vertrags.
-  ctx._core = { physics, player, combat, input, city, pedestrians };
+  ctx._core = { physics, player, combat, input, city, pedestrians, vehicles, look };
   if (import.meta.env.DEV) window.__ctx = ctx; // nur im Vite-Dev-Server, für Konsole und Smoke-Tests
   return ctx;
 }

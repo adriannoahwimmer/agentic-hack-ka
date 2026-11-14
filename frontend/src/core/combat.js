@@ -36,7 +36,8 @@ export function createCombat({ THREE, scene, camera, RAPIER, world, input, hud, 
   // --- Effekte ---------------------------------------------------------------
   const flash = new THREE.PointLight(0xffc46b, 0, 8);
   scene.add(flash);
-  const flashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffe08a }));
+  // Mündungsfeuer HDR-hell (Farbe x8), damit der Bloom-Pass es aufgreift.
+  const flashMesh = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffe08a).multiplyScalar(8) }));
   flashMesh.visible = false;
   scene.add(flashMesh);
   const tracerMat = new THREE.LineBasicMaterial({ color: 0xfff1a8, transparent: true, opacity: 0.9 });

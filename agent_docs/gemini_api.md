@@ -19,7 +19,7 @@ Modelle und SDK-Fragen zuerst im Skill `gemini-api-dev` nachschlagen (`.claude/s
 | `GEMINI_MODEL_FALLBACK` | `gemini-3.1-flash-lite` | Ausweichmodell nach 5xx |
 | `GEMINI_THINKING_LEVEL` | `low` | für `/agent` und `/chat`, auch beim Fallback (main.py:202-214) |
 | `MAX_AGENT_STEPS` | `8` | max. Loop-Schritte, also Requests, pro `/agent` |
-| `GEMINI_TIMEOUT_MS` | `30000` | Deadline pro Request, siehe "Timeout = Server-Deadline" |
+| `GEMINI_TIMEOUT_MS` | `15000` | Deadline pro Request, siehe "Timeout = Server-Deadline" und "Latenz mit Polizei-Function-Call" |
 | `GEMINI_TRANSPORT_ATTEMPTS` | `2` | SDK-Versuche bei Timeout, Verbindungsabbruch oder 408 |
 | `GEMINI_RETRY_ATTEMPTS` | `3` | Versuche pro Modell bei 500, 502 und 503 |
 | `GEMINI_RETRY_BASE_DELAY` / `_MAX_DELAY` | `2.0` / `8.0` s | Backoff |
@@ -54,6 +54,38 @@ Je Modell 3 Calls über `main.generate()` mit `thinking_level=low` und Timeout 3
 - Alle erfolgreichen Tool-Calls hatten das korrekte Argument `{"expression": "17 * 23 + 4"}`.
 - Folge für config.py: `gemini-3.5-flash-lite` ist Default für Agent und Chat, `gemini-3.1-flash-lite` ist Fallback.
 - Es ist eine Momentaufnahme mit wenigen Calls. Bei Lastspitzen einfach neu messen. Rohdaten als JSON Lines lokal in `logs/latency-bench.jsonl` (gitignored).
+
+## Latenz mit Polizei-Function-Call (2026-11-14, 2. Messung)
+Je Modell 5 Calls, abwechselnd, 10 Requests insgesamt. Direkt über `client.models.generate_content` wie in `/agent`: manuelles Function Calling, `thinking_level=low` (die App schickt beim Fallback dasselbe), Deadline 30 s. Ohne Retry, ohne Fallback und ohne SDK-Transport-Retries.
+- **Prompt**: System-Prompt mit Fahndungsregeln (Stufe 0-5) und Sollstärke je Stufe, dazu ein Lage-Snapshot als JSON. Im Snapshot: Spieler rammt Streifenwagen P-2 und flieht, Fahndungsstufe 1, aktiv ist nur P-1.
+- **Tools**: `set_wanted_level(level, reason)` und `spawn_units(unit_type, count, x, y, behavior)` mit Enums und Grenzen.
+- **Gemessen** bis zur Antwort mit den Function-Calls, ohne Tool-Roundtrip. Ab da kann das Spiel handeln.
+- **Korrekt** heißt: `set_wanted_level` mit Stufe 3, dazu `spawn_units` für `patrol_car` und `roadblock`, alle Argumente schema-gültig.
+
+| Modell | p50 | p90 | max | Fehler | Tool-Call korrekt |
+|---|---|---|---|---|---|
+| `gemini-3.5-flash-lite` (Agent) | **0,74 s** | **0,86 s** | 0,92 s | 0/5 | ja (5/5) |
+| `gemini-3.1-flash-lite` (Fallback) | 7,07 s | 11,11 s | 12,52 s | 1/5 (504 nach 29,5 s) | ja (4/4 der erfolgreichen) |
+
+- Beide Modelle lieferten alle drei Calls in einer Antwort (parallele Function-Calls).
+- `gemini-3.5-flash-lite` denkt bei `low` gar nicht (`thoughts_token_count` leer).
+- `gemini-3.1-flash-lite` denkt etwa 115 Tokens und gibt etwa 116 aus. Die 5 bis 12 s kommen also wohl aus Wartezeit beim Server, nicht aus der Generierung. Das passt zu den 503 "high demand" der 1. Messung.
+- **Sollstärke:** `gemini-3.5-flash-lite` schickte in 3 von 5 Calls 3 statt 2 Streifenwagen, weil es den aktiven Wagen P-1 nicht abzog. Mengen sollte deshalb das Spiel rechnen: den Fehlbestand im Snapshot mitschicken oder im Tool begrenzen.
+- Rohdaten lagen lokal unter `scratch/latency.jsonl`, das Skript unter `scratch/latency.py`. Beides ist nicht committet.
+
+Folgen:
+- Agent-Modell `gemini-3.5-flash-lite` mit `low` und Fallback `gemini-3.1-flash-lite` bleiben. Eine schnellere Alternative für den Fallback gibt es nicht (3.8-flash 503/504, 2.5-flash-lite 404, Hydrogen 30 bis 90 s).
+- `GEMINI_TIMEOUT_MS` sinkt von 30000 auf 15000.
+  - Der Wert gilt für beide Modelle (ein Client). 15 s decken den langsamsten erfolgreichen Fallback-Call (12,5 s) ab.
+  - 5 s wären zu knapp: 3 von 4 erfolgreichen Fallback-Calls wären dann im 504 gelandet.
+  - Hängt das Primärmodell, startet der Fallback nach etwa 15 statt 30 s.
+  - Die Spiel-Agenten haben eine eigene Deadline pro Request: `AGENT_DEADLINE_MS` (6 s), übergeben als `timeout_ms` an `generate()` (Plan, Phase 0b).
+- Für das Spiel ist das Fallback-Modell mit 5 bis 12,5 s zu langsam. Spiel-Agenten rufen es deshalb nicht auf (`use_fallback_model=False`, Plan, Phase 0b). Fällt das Agent-Modell aus oder bleibt die Antwort aus, greift sofort der geskriptete Fallback des Spiels. So kostet kein Request Geld, dessen Ergebnis verworfen würde.
+- Takt im Spiel: Die Latenz ist kein Engpass, das Request-Budget bestimmt den Takt.
+  - Verbindlich (`config.py`, Plan `docs/plans/2026-11-14-faecherstadt.md`): Sammelfenster `AGENT_DEBOUNCE_S` mindestens 5 s, Mindestabstand `POLICE_MIN_INTERVAL_S` 8 s, also höchstens 7,5 Requests pro Minute und Agent.
+  - Pro Agent höchstens ein Request gleichzeitig. Events, die währenddessen ankommen, fließen in den nächsten Snapshot.
+  - Je Request fallen rund 900 Tokens Input und 115 Output an.
+  - `AGENT_DEADLINE_MS` (6 s) reicht dem Agent-Modell mit großem Abstand (max. 0,92 s).
 
 ## Live-Smoke-Tests (2026-11-14, ca. 11:20-11:29 Uhr)
 Mit dem damaligen Default `gemini-4-hydrogen`.
@@ -108,7 +140,7 @@ Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem H
 - Ist das Modell selbst schon das Fallback-Modell, gibt es keine doppelte Runde.
 - Warum 429 nicht wiederholt wird: Bei Tier 3 heißt 429 meist "Spend-Cap des Projekts erreicht". Retries und Fallback helfen dann nicht. Prüfen bzw. anheben unter aistudio.google.com/spend.
 - Retries und Fallbacks werden als `WARNING` geloggt: Modell, Statuscode und Gemini-Meldung, kein Key.
-- Worst Case bei hängendem Primärmodell: etwa `GEMINI_TIMEOUT_MS` plus die Fallback-Dauer.
+- Worst Case bei hängendem Primärmodell: etwa `GEMINI_TIMEOUT_MS` (15 s) plus die Fallback-Dauer (gemessen 5 bis 12,5 s).
 
 ## Tool-Loop (`GET /agent`, main.py:251-288)
 - Automatic Function Calling ist bewusst aus (main.py:212). Der Loop ist manuell, damit jeder Schritt sichtbar und testbar bleibt.

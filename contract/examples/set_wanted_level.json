@@ -1,0 +1,9 @@
+{
+  "type": "set_wanted_level",
+  "ts": 1763125398123,
+  "payload": {
+    "level": 2,
+    "source": "agent",
+    "reason": "Civilian killed at Market Square"
+  }
+}

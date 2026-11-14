@@ -5,25 +5,29 @@ Lebendes Design-Dokument. Jedes Feature bekommt unter "Features" einen eigenen A
 ## Architektur
 
 ```
-Browser                                Server (Codesphere, 0.0.0.0:3000)
-  Three.js   Rendering                   FastAPI (main.py)
-  Rapier     Physik          WebSocket     Agenten:
-  OSM-Stadt  vorgebacken   <----------->     Polizei-Dispatcher
-  Agent-Log-Overlay                          Gang-Boss
-                                             Quest-NPC
-                                               |
-                                               | google-genai
-                                               v
-                                             Gemini API
+Browser (Three.js + Rapier, Vite)                    FastAPI :3000 (main.py)
+ core/: Stadt, Spieler, Auto, Ballern,    WS /ws      ws.py -> hub.py (Event-/Action-Bus)
+   HUD, net.js                         <=========>      |- game_state.py  Fahndung, Wahrheit
+ features/*.js registrieren Handler:    Envelope        |- runner.py      Debounce, Clamp, Fallback
+   police.js, npc.js, quest.js,                         |    '- agents/police.py, agents/gang.py
+   radio.js, agent-log.js              POST /npc/talk   |- quests.py      Quest-Prüfung per Position
+                                       ------------->   |- agents/quest.py + maps_facts.py
+                                       GET /tts/k.wav   '- tts.py         async + Cache
+                                       ------------->  gemini.py: generate() + Budget + genai_log.py
+                                                         -> logs/genai.jsonl -> agent_log per WS
+                                                         -> Gemini API (google-genai)
 ```
+Umsetzungsplan mit Scheiben, Datei-Besitz und Zeitplan: `docs/plans/2026-11-14-faecherstadt.md`.
 
 ### Frontend
-- Three.js für das Rendering, Rapier für die Physik. Beides läuft im Browser.
-- Das Agent-Log-Overlay zeigt die GenAI-Calls der Agenten live an (Format siehe "Querschnitt").
+- Three.js für das Rendering, Rapier für die Physik. Beides läuft im Browser. Vite für Dev, `npm run build` nach `static/`, FastAPI liefert das Spiel unter `/play/` aus.
+- Der Client ist zuständig für Physik, Treffer und Bewegung. Er meldet Events, der Server entscheidet über Fahndung, Quests und Agenten.
+- Das Agent-Log-Overlay zeigt die GenAI-Calls der Agenten live an (Format siehe "Vertrag").
 
 ### Backend
-- FastAPI. Der Spielverkehr läuft über WebSocket.
+- FastAPI. Der Spielverkehr läuft über WebSocket (`/ws`), der Quest-Dialog über `POST /npc/talk`, Funk-Audio über `GET /tts/{key}.wav`.
 - HTTP-Endpoints: `GET /` (Healthcheck, ruft Gemini nie auf), `/chat` und `/agent` aus dem Starter zum Debuggen.
+- Das Spiel wartet nie auf das LLM. Agenten ändern nur Parameter (Level, Anzahl, Taktik, Funk); bei Fehler, Timeout, `AGENTS_MODE=offline` oder erschöpftem Budget greifen geskriptete Fallbacks.
 
 ### Agenten
 - Polizei-Dispatcher, Gang-Boss, Quest-NPC. Jeder Agent bekommt eine eigene Datei und einen eigenen Abschnitt unter "Features".
@@ -39,6 +43,121 @@ Browser                                Server (Codesphere, 0.0.0.0:3000)
 - Secrets: nur aus der Umgebung, nie in Code oder Logs. Das Repo ist public.
 - Fehler: 429 heißt Spend-Cap und wird nicht wiederholt. Bei 503 wird auf das Fallback-Modell ausgewichen.
 
+## Vertrag
+
+Verbindliche Schnittstellen zwischen Browser, Server und Agenten. Code: `protocol.py` (Pydantic-Modelle), Beispiele: `contract/examples/*.json` (pytest validiert jedes gegen `protocol.py`). Seit Schritt 0 gilt: Felder nur additiv ändern, nie umbenennen. Events vom Client sind tolerant (unbekannte Felder werden ignoriert), alles vom Server ist strikt.
+
+### Koordinaten
+- Meter, Ursprung Schloss Karlsruhe (lat 49.0135, lon 8.4044). **x = Ost, y = oben, z = Süd** (z = −Nord, Three.js-Konvention: Norden zeigt nach −z).
+- Einzige Projektion: `geo.py` (`to_local(lat, lon) -> (x, z)`, `to_latlon(x, z)`), äquirektangulär, R = 6 371 008,8 m. Bake-Bereich `geo.BAKE_BBOX` = (S 49.0075, W 8.3965, N 49.0160, E 8.4125).
+- `heading` in Radiant (Rotation um y), `speed` in m/s. Koordinaten außerhalb ±5000 m sind ungültig.
+
+### WebSocket `/ws`: Envelope
+```json
+{"type": "shot_fired", "ts": 1763125392123, "payload": {}}
+```
+- `type`: String aus den Tabellen unten. `ts`: int, Unix-Zeit in ms, gesetzt vom Sender. `payload`: Objekt gemäß Modell.
+- Ungültige Nachrichten: Der Server verwirft sie und antwortet mit `error`, die Verbindung bleibt offen.
+- Server-Limit: höchstens `WS_MAX_EVENTS_PER_S` Events pro Sekunde und Client, der Rest wird verworfen (`error` mit `rate_limited`).
+- Beim Verbinden schickt der Server den aktuellen Zustand nach: `set_wanted_level` und, falls aktiv, `quest_update`.
+
+### Events: Client -> Server
+| type | payload | Hinweise |
+|---|---|---|
+| `player_position` | `x: float, z: float, heading: float, speed: float 0–200, in_vehicle: bool, zone_id: str\|null` | höchstens 2 Hz (Client drosselt), löst nie einen Agenten aus |
+| `shot_fired` | `x, z, shots: int 1–50, weapon: "pistol"\|"smg", zone_id` | Client bündelt Schüsse pro 500 ms |
+| `npc_killed` | `npc_id: str, npc_kind: "civilian"\|"police"\|"gang"\|"quest_target", x, z, zone_id, quest_id: str\|null` | sendet nur `core/combat` |
+| `vehicle_stolen` | `vehicle_id: str, vehicle_kind: "civilian"\|"police", x, z, zone_id` | |
+| `zone_entered` | `zone_id: str, previous_zone_id: str\|null` | Zone = POI, in dessen `radius` der Spieler steht |
+
+### Aktionen: Server -> Client
+| type | payload | Hinweise |
+|---|---|---|
+| `set_wanted_level` | `level: int 0–WANTED_MAX (5), source: "rules"\|"agent"\|"fallback", reason: str ≤160` | Level 0: Client entfernt alle Polizei-Einheiten |
+| `spawn_units` | `wave_id: str, faction: "police"\|"gang", count: int 1–POLICE_MAX_UNITS (6), unit_type: "patrol"\|"swat"\|"gang", tactic: "chase"\|"roadblock"\|"surround", near_poi_id: str\|null` | null = in Spielernähe, 120–200 m entfernt |
+| `radio_message` | `id: str, speaker: str, text: str ≤RADIO_MAX_CHARS (160), voice: str, tts_key: str (16 hex)` | nur über `protocol.make_radio_message()` bauen; Audio unter `GET /tts/{tts_key}.wav` |
+| `quest_update` | `quest_id, status: "active"\|"target_reached"\|"completed", title ≤80, objective ≤200, poi_id, target: {x, z, radius}, spawn_targets: int 0–5, remaining: int 0–5` | bei `target_reached` spawnt der Client `spawn_targets` Gegner |
+| `agent_log` | Logzeile ohne `prompt` und `config` (siehe JSONL-Log) | fürs Overlay |
+| `error` | `code: "invalid_message"\|"unknown_type"\|"rate_limited", message: str` | Debug-Hilfe |
+
+### Beispiele (je eine Datei in `contract/examples/`)
+```json
+{"type": "player_position", "ts": 1763125392123, "payload": {"x": -30.5, "z": 480.0, "heading": 3.14, "speed": 1.4, "in_vehicle": false, "zone_id": null}}
+{"type": "shot_fired", "ts": 1763125392123, "payload": {"x": -33.0, "z": 500.2, "shots": 6, "weapon": "pistol", "zone_id": "marktplatz"}}
+{"type": "npc_killed", "ts": 1763125392123, "payload": {"npc_id": "ped-12", "npc_kind": "civilian", "x": -36.1, "z": 509.8, "zone_id": "marktplatz", "quest_id": null}}
+{"type": "vehicle_stolen", "ts": 1763125392123, "payload": {"vehicle_id": "car-3", "vehicle_kind": "civilian", "x": 20.4, "z": 470.0, "zone_id": null}}
+{"type": "zone_entered", "ts": 1763125392123, "payload": {"zone_id": "marktplatz", "previous_zone_id": null}}
+{"type": "set_wanted_level", "ts": 1763125398123, "payload": {"level": 2, "source": "agent", "reason": "Civilian killed at Market Square"}}
+{"type": "spawn_units", "ts": 1763125398123, "payload": {"wave_id": "w-3", "faction": "police", "count": 2, "unit_type": "patrol", "tactic": "roadblock", "near_poi_id": "marktplatz"}}
+{"type": "radio_message", "ts": 1763125398123, "payload": {"id": "r-7", "speaker": "Dispatch", "text": "Dispatch to all units: shots fired at Market Square, suspect on foot. Two patrols, block Kaiserstrasse.", "voice": "Orus", "tts_key": "1ad3fd64a39b91dd"}}
+{"type": "quest_update", "ts": 1763125332123, "payload": {"quest_id": "q-1", "status": "active", "title": "Pyramid Trouble", "objective": "Go to Market Square and deal with 3 thugs", "poi_id": "marktplatz", "target": {"x": -35.2, "z": 506.9, "radius": 35}, "spawn_targets": 0, "remaining": 3}}
+{"type": "error", "ts": 1763125392123, "payload": {"code": "invalid_message", "message": "payload.shots: Input should be less than or equal to 50"}}
+```
+`agent_log`: siehe `contract/examples/agent_log.json` (Payload = JSONL-Zeile ohne `prompt`/`config`).
+
+### HTTP `POST /npc/talk`
+Request (`NpcTalkRequest`, tolerant): `npc_id: str, player_text: str ≤200 (Default "", dann grüßt der NPC), x, z: float|null`.
+```json
+{"npc_id": "fixer_karl", "player_text": "Got any work?", "x": -12.0, "z": 150.5}
+```
+Response 200 (`NpcTalkResponse`), auch im Fallback, nie 5xx durch Gemini: `npc_id, text ≤600, quest: QuestUpdate|null, sources: [{title, uri}], model: str|null, fallback: bool`.
+```json
+{"npc_id": "fixer_karl", "text": "You want work? Three of Viper's thugs are hanging around the Pyramid on Market Square. Make them leave. Permanently.",
+ "quest": {"quest_id": "q-1", "status": "active", "title": "Pyramid Trouble", "objective": "Go to Market Square and deal with 3 thugs",
+           "poi_id": "marktplatz", "target": {"x": -35.2, "z": 506.9, "radius": 35}, "spawn_targets": 0, "remaining": 3},
+ "sources": [{"title": "Marktplatz Karlsruhe", "uri": "https://maps.google.com/?cid=1234567890"}],
+ "model": "gemini-3.5-flash-lite", "fallback": false}
+```
+- `quest` ist null, wenn nur geredet wurde. Eine neue Quest kommt zusätzlich als `quest_update` per WS.
+- `sources` (Maps Grounding) muss das UI direkt unter dem Text zeigen: "Google Maps" unverändert, mit `translate="no"`, Titel als Link auf `uri`.
+- 404 bei unbekannter `npc_id`, 422 bei ungültigem Body.
+
+### Snapshot für Agenten (`protocol.AgentSnapshot`)
+Geht als kompaktes JSON (`to_prompt()`, ohne None-Felder, Ziel unter 2 KB) als User-Content an den Agenten. Beispiel: `contract/examples/snapshot_police.json`.
+- `agent: str, t: ISO-UTC, player: {x, z, zone_id, in_vehicle, speed}|null`
+- `wanted_level: int, units_active: int, units_max: int`
+- `recent_events: [{type, s_ago, zone_id, detail}]` (höchstens 12), `counts_60s: {type: int}`
+- `memory: [str]` (höchstens 5 Zeilen, vom Agentenmodul gepflegt)
+- `places: [{id, name}]` (POIs)
+- `extras: {name: any}` aus `hub.register_snapshot_provider(name, fn)`: `quests.py` liefert `quest`, `game_state.py` liefert `wanted`.
+- Mengen rechnet der Server, nicht das Modell (Messung 2026-11-14: das Modell zog aktive Einheiten in 3 von 5 Calls nicht ab). Tools fragen deshalb Sollwerte ab (z. B. Soll-Einheiten), der Server rechnet die Differenz und clampt.
+
+### JSONL-Log `logs/genai.jsonl` (`protocol.GenaiLogLine`)
+Eine Zeile pro GenAI-Request (pro tatsächlichem HTTP-Versuch) und pro Fallback-Entscheidung. Beispiel: `contract/examples/genai_log_line.json`.
+- `ts` (ISO-UTC mit ms), `call_no` (Zähler pro Prozess), `kind: "genai"|"fallback"`, `agent`, `model` (null bei Fallback)
+- `status: "ok"|"error"`, `error: {code: int|str, message}|null`, `latency_ms`
+- `prompt` (gekürzt auf `GENAI_LOG_MAX_PROMPT_CHARS`), `config: {tools, tool_mode, thinking_level, system_instruction_chars, response_modalities}`
+- `output: {text, calls: [{tool, args}], inline: [{mime, bytes}], sources: [{title, uri}]}`
+- `reason`: aus `args.reason` des ersten Calls (jedes Spiel-Tool hat ein Pflichtfeld `reason`, ein Satz)
+- Inline-Daten nur als Platzhalter `{mime, bytes}`. Nie im Log: Key, Header, Auth.
+- Das Overlay bekommt jede Zeile als `agent_log` (ohne `prompt` und `config`).
+
+### POI-Datei `data/pois.json` (`protocol.PoiFile`)
+`{version: 1, origin: {lat, lon}, pois: [Poi]}`; `Poi`:
+- `id` (Slug `[a-z0-9_]`), `name` (EN), `category`, `lat`, `lon`, `x`, `z` (aus `geo.to_local`), `radius` (m)
+- `osm_ref` (`way/316433983`), `tags` aus `mission`, `gang_turf`, `npc_spot`, `crowded`, `description` (EN, ≤300)
+- Quest-Ziele kommen nur von hier (`poi_id` muss existieren). Zonen überlappen nicht (Test).
+- Aktueller Stand: 9 POIs (Schloss, Schlossplatz, Marktplatz, Stadtkirche, Bundesverfassungsgericht, Botanischer Garten, Kunsthalle, Kronenplatz, Friedrichsplatz), Koordinaten aus OSM (Overpass, 2026-11-14).
+
+### Registrierungspunkte
+Ziel: Feature-Scheiben berühren `main.py` und `frontend/src/main.js` nicht.
+- **Backend-Feature-Modul** exportiert `register(hub) -> None` und optional `router` (APIRouter), `async startup()`, `async shutdown()`.
+  - `main.py` geht `FEATURE_MODULES` durch (`game_state`, `quests`, `runner`, `maps_facts`, `tts`, `agents.police`, `agents.gang`, `agents.quest`): importieren, falls vorhanden, `register(HUB)`, `include_router`, Lifespan-Hooks. Fehlt ein Modul, wird es übersprungen. Jeder andere Importfehler bricht den Start ab.
+  - Die Reihenfolge ist die Handler-Reihenfolge: erst Zustand, dann Agenten. Kein Code mit Seiteneffekten beim Import.
+- **Hub** (`hub.py`):
+  - `on_event(type | "*", fn)`, `await publish_event(env)` (nur ws.py)
+  - `await send_action(type, payload)`, `send_action_threadsafe(type, payload)` (aus Threads)
+  - `on_action(type, fn)`: Beobachter ausgehender Aktionen (z. B. TTS)
+  - `on_connect(fn) -> list[Envelope]`: Zustand für neue Clients
+  - `register_snapshot_provider(name, fn)`, `snapshot_extras()`
+  - Handler müssen schnell sein: kein LLM-Call im Handler, höchstens einen Task starten.
+- **Agent-Runner** (`runner.py`): `register_agent(AgentSpec(name, triggers, min_interval_s, decide, fallback, clamp))`.
+  - Ablauf: Trigger-Event öffnet ein Sammelfenster von `AGENT_DEBOUNCE_S` (≥5 s) → Mindestabstand `min_interval_s` → höchstens ein Call pro Agent → `decide(snapshot)` mit Deadline `AGENT_DEADLINE_MS` → bei Timeout, Fehler, `offline` oder Budget: `fallback(snapshot)` → `clamp` → `send_action`. Verspätete Ergebnisse werden verworfen.
+- **Frontend-Feature-Modul**: `frontend/src/features/<name>.js` exportiert `init(ctx)`. `main.js` lädt alle per `import.meta.glob('./features/*.js', {eager: true})`.
+- **`ctx`** (JSDoc: `frontend/src/types.js`, gebaut von `frontend/src/core/`): `three, scene, camera, renderer, rapier, physics, net {on, send, sendThrottled, onStatus}, onUpdate(fn(dt, t)), input {isDown, onKey}, player {position, heading, inVehicle, object3d}, world {pois, zoneAt, randomRoadPoint}, combat {addTarget, removeTarget}, models {car, person}, hud {setWanted, toast, setObjective, subtitle, showDialog, hideDialog, addPanel}, start()`.
+  - `combat.addTarget(obj, {id, kind, questId?, hp, onKilled})`: core macht Raycast und HP, sendet `npc_killed` und ruft `onKilled`.
+- **Debug**: `POST /debug/action` (nur mit `DEBUG_ENDPOINTS=1`) nimmt eine Server-Envelope (z. B. eine Datei aus `contract/examples/`) und broadcastet sie.
+
 ## Features
 
 Vorlage für einen neuen Abschnitt:
@@ -53,19 +172,46 @@ Vorlage für einen neuen Abschnitt:
 - Offene Punkte:
 ```
 
-### Polizei-Dispatcher
+### Vertrag und Kern (Schritt 0)
+- Zweck: gemeinsame Schnittstellen und Infrastruktur, auf denen alle Scheiben aufbauen.
+- Use-Cases: Nachrichten validieren, Koordinaten projizieren, POIs laden, Features registrieren.
+- Dateien:
+  - 0a: `protocol.py`, `geo.py`, `data/pois.json`, `contract/examples/`, Frontend-Skelett (`frontend/package.json`, `vite.config.js`, `index.html`, `src/main.js`, `src/net.js`, `src/types.js`, Platzhalter `src/core/index.js`), Tests `tests/test_protocol.py`, `tests/test_geo.py`
+  - 0b: `gemini.py`, `genai_log.py`, `hub.py`, `ws.py`, Loader in `main.py`
+- Schnittstellen: siehe "Vertrag".
+- Agent und Modell: Schlüssel im Block "Kern" und "Modelle je Agent" in `config.py`.
+- Offene Punkte:
+  - 0b (Kern) folgt nach Freigabe des Vertrags.
+  - Overpass: von dieser Maschine nur der Mirror `maps.mail.ru` erreichbar (overpass-api.de und kumi.systems: keine Verbindung, 2026-11-14).
+
+### Frontend-Kern (Scheibe Welt)
 _noch leer_
 
-### Gang-Boss
+### OSM-Stadt (Scheibe Welt)
 _noch leer_
 
-### Quest-NPC
+### Spielzustand (Scheibe Polizei)
 _noch leer_
 
-### OSM-Stadt
+### Agent-Runner (Scheibe Polizei)
 _noch leer_
 
-### Agent-Log-Overlay
+### Polizei-Dispatcher (Scheibe Polizei)
+_noch leer_
+
+### Gang-Boss (Scheibe Polizei, optional)
+_noch leer_
+
+### Quest-NPC (Scheibe Quest)
+_noch leer_
+
+### Maps-Fakten (Scheibe Quest)
+_noch leer_
+
+### Polizeifunk-TTS (Scheibe Quest)
+_noch leer_
+
+### Agent-Log-Overlay (Phase 4)
 _noch leer_
 
 ### Starter-Endpoints `/chat` und `/agent`
@@ -91,11 +237,17 @@ _noch leer_
   - `GEMINI_MODEL_AGENT` und `GEMINI_MODEL_CHAT`: beide `gemini-3.5-flash-lite` (schnellstes Modell der Latenz-Messung vom 2026-11-14)
   - `GEMINI_MODEL_FALLBACK`: `gemini-3.1-flash-lite` (zweitschnellstes)
   - `GEMINI_THINKING_LEVEL`: `low`
-  - Limits: `MAX_AGENT_STEPS`, `GEMINI_TIMEOUT_MS`, `GEMINI_RETRY_*`
+  - Limits: `MAX_AGENT_STEPS`, `GEMINI_TIMEOUT_MS` (15 s, deckt den langsamen Fallback ab), `GEMINI_RETRY_*`
   - Details in `agent_docs/gemini_api.md`
+- Aufruf aus dem Spiel (Messung vom 2026-11-14 mit Polizei-Function-Call, Agent p90 0,86 s):
+  - Die Latenz ist kein Engpass, das Request-Budget bestimmt den Takt: Sammelfenster `AGENT_DEBOUNCE_S` mindestens 5 s, Mindestabstand `POLICE_MIN_INTERVAL_S` 8 s, also höchstens 7,5 Requests pro Minute und Agent.
+  - `AGENT_DEADLINE_MS` 6 s reicht dem Agent-Modell. Das Fallback-Modell (5 bis 12,5 s) rufen Spiel-Agenten nicht auf (`use_fallback_model=False`), stattdessen greift sofort der geskriptete Fallback.
+  - Pro Agent höchstens ein Request gleichzeitig. Events, die währenddessen ankommen, fließen in den nächsten Snapshot.
+  - Mengen (z. B. fehlende Einheiten) rechnet das Spiel und schickt sie im Snapshot mit oder begrenzt sie im Clamp. Das Modell lag dabei in 3 von 5 Calls daneben.
 - Offene Punkte:
   - Hydrogen war beim Smoke-Test am 2026-11-14 sehr langsam (30 bis 90 s pro Schritt). Deshalb ist Flash-Lite Default. Hydrogen oder Carbon nur per Env und mit höherem Timeout.
   - Der Fallback mitten im Tool-Loop (3.5-flash-lite-Signatures an 3.1-flash-lite) ist nicht live getestet.
   - `gemini-3.1-flash-lite` lieferte in der Messung 2 von 6 Mal 503. Als Fallback reicht das, als Primärmodell nicht.
+  - Mit Polizei-Function-Call braucht `gemini-3.1-flash-lite` 5 bis 12,5 s (1 von 5 Calls: 504). Spiel-Agenten nutzen es deshalb nicht, sondern den geskripteten Fallback.
   - Die Decisions API (`gemini-decision-1`) funktioniert mit dem Key. Für geschlossene Agent-Entscheidungen ist sie ein Kandidat, eingebaut ist sie noch nicht (`agent_docs/gemini_api.md`).
   - GenAI-Calls werden noch nicht als JSON Lines geloggt (Querschnittsregel, Quelle für das Agent-Log-Overlay).

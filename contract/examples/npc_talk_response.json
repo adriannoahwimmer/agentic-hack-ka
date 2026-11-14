@@ -1,0 +1,26 @@
+{
+  "npc_id": "fixer_karl",
+  "text": "You want work? Three of Viper's thugs are hanging around the Pyramid on Market Square. Make them leave. Permanently.",
+  "quest": {
+    "quest_id": "q-1",
+    "status": "active",
+    "title": "Pyramid Trouble",
+    "objective": "Go to Market Square and deal with 3 thugs",
+    "poi_id": "marktplatz",
+    "target": {
+      "x": -35.2,
+      "z": 506.9,
+      "radius": 35
+    },
+    "spawn_targets": 0,
+    "remaining": 3
+  },
+  "sources": [
+    {
+      "title": "Marktplatz Karlsruhe",
+      "uri": "https://maps.google.com/?cid=1234567890"
+    }
+  ],
+  "model": "gemini-3.5-flash-lite",
+  "fallback": false
+}

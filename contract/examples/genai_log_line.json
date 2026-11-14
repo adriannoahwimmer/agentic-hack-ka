@@ -1,0 +1,54 @@
+{
+  "ts": "2026-11-14T14:03:13.412Z",
+  "call_no": 42,
+  "kind": "genai",
+  "agent": "police",
+  "model": "gemini-3.5-flash-lite",
+  "status": "ok",
+  "error": null,
+  "latency_ms": 612,
+  "output": {
+    "text": null,
+    "calls": [
+      {
+        "tool": "set_wanted_level",
+        "args": {
+          "level": 2,
+          "reason": "Civilian killed at Market Square"
+        }
+      },
+      {
+        "tool": "spawn_units",
+        "args": {
+          "target_units": 2,
+          "unit_type": "patrol",
+          "tactic": "roadblock",
+          "near_place_id": "marktplatz",
+          "reason": "Cut off the escape route"
+        }
+      },
+      {
+        "tool": "radio_message",
+        "args": {
+          "text": "Dispatch to all units: shots fired at Market Square, suspect on foot. Two patrols, block Kaiserstrasse.",
+          "reason": "Inform all units"
+        }
+      }
+    ],
+    "inline": [],
+    "sources": []
+  },
+  "reason": "Civilian killed at Market Square",
+  "prompt": "{\"agent\":\"police\",\"t\":\"2026-11-14T14:03:12Z\",\"wanted_level\":1,\"...\":\"(gekuerzt)\"}",
+  "config": {
+    "tools": [
+      "set_wanted_level",
+      "spawn_units",
+      "radio_message"
+    ],
+    "tool_mode": "ANY",
+    "thinking_level": "low",
+    "system_instruction_chars": 840,
+    "response_modalities": null
+  }
+}

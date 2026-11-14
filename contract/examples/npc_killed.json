@@ -1,0 +1,12 @@
+{
+  "type": "npc_killed",
+  "ts": 1763125392123,
+  "payload": {
+    "npc_id": "ped-12",
+    "npc_kind": "civilian",
+    "x": -36.1,
+    "z": 509.8,
+    "zone_id": "marktplatz",
+    "quest_id": null
+  }
+}

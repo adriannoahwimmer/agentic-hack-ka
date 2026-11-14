@@ -1,0 +1,8 @@
+{
+  "type": "zone_entered",
+  "ts": 1763125392123,
+  "payload": {
+    "zone_id": "marktplatz",
+    "previous_zone_id": null
+  }
+}

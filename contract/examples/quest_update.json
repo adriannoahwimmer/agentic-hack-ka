@@ -1,0 +1,18 @@
+{
+  "type": "quest_update",
+  "ts": 1763125332123,
+  "payload": {
+    "quest_id": "q-1",
+    "status": "active",
+    "title": "Pyramid Trouble",
+    "objective": "Go to Market Square and deal with 3 thugs",
+    "poi_id": "marktplatz",
+    "target": {
+      "x": -35.2,
+      "z": 506.9,
+      "radius": 35
+    },
+    "spawn_targets": 0,
+    "remaining": 3
+  }
+}

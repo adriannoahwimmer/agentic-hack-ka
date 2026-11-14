@@ -1,5 +1,7 @@
 # Fächerstadt Agents
 
+Video: TBD
+
 A browser open world around Karlsruhe Palace, built from real OpenStreetMap data: walk, drive, shoot, and get chased by the police. The twist: nothing is scripted. A Gemini police dispatcher and a Gemini quest giver make the decisions through function calling. The game never waits for them, because deterministic rules and scripted fallbacks keep it running when the model is slow or offline.
 
 Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe (2026-11-14).
@@ -82,6 +84,11 @@ Browser (Three.js + Rapier, Vite)              FastAPI :3000
 - **Logging.** Every Gemini request goes to `logs/genai.jsonl` as one JSON line: agent, model, tool calls, reason, latency, without keys. Each line is also sent to the browser as `agent_log`; the in-game overlay for it is still open.
 - **Map.** OSM data is baked once into compact JSON (`scripts/bake_osm.py`, 959 buildings, 1546 road segments, 230 areas) with a single projection (`geo.py`, origin at the palace). There are no map requests at runtime.
 
+## Landmarks
+_Placeholder, to be confirmed after the landmarks merge._
+
+Hand-modelled low-poly models of the Palace, the Pyramid, the Protestant City Church and the Town Hall (Rathaus) replace the generic extruded OSM blocks at these spots.
+
 ## APIs, models, frameworks and tools
 **Google Gemini**
 - Gemini API via the `google-genai` Python SDK (`models.generate_content`), using manual function calling, `thinking_level=low`, per-request deadlines and a fallback model for the debug endpoints.
@@ -104,7 +111,7 @@ Browser (Three.js + Rapier, Vite)              FastAPI :3000
 - HDRI "Kloofendal 48d Partly Cloudy (Pure Sky)" by Poly Haven, CC0.
 
 **Development tools**
-- ruff, pytest, httpx (test client), gitleaks (secret scan), GitHub CLI, git worktrees, and Claude Code (agentic development, three parallel sessions).
+- ruff, pytest, httpx (test client), gitleaks (secret scan), GitHub CLI, and Claude Code (agentic development, up to five parallel sessions in git worktrees).
 
 **Prepared, not deployed**
 - Codesphere (`ci.yml`).
@@ -127,6 +134,16 @@ Browser (Three.js + Rapier, Vite)              FastAPI :3000
 - `docs/plans/`: implementation plan
 - `agent_docs/`: notes on the Gemini API and the deployment
 - `TEAM.md`, `CLAUDE.md`: team workflow and rules for Claude Code
+
+## Team
+**Adrian Wimmer**. The project was built with Claude Code sessions running in parallel, one git worktree per slice (world, police, quest).
+
+How we worked (details in `TEAM.md`):
+- One branch per slice (`feat/<slice>`). Nobody pushes directly to `main`; everything is merged through pull requests.
+- `scripts\check.ps1` (ruff, pytest, frontend build) must be green before every push.
+- Every developer uses their own Gemini key in their own local `.env`. Keys are never shared or committed.
+- Tests always mock Gemini (`fake_gemini`, `tests/fakes.py`), because every live call counts against the request limit.
+- Schedule: deadline 19:00, bug fixes only from 18:00.
 
 ## Licenses and attribution
 Map data © OpenStreetMap contributors (ODbL). The HDRI by Poly Haven is CC0.

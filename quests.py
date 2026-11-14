@@ -29,7 +29,10 @@ TITLE_TEMPLATES = (
     "Hot Spot: {name}",
     "Unfinished Business at {name}",
 )
-OBJECTIVE_TEMPLATE = "Go to {name} and take out {n} thugs"
+OBJECTIVE_TEMPLATE = "Go to {name} and take out {n} rival smugglers"
+# Behörden und Gerichte sind nie Quest-Ziel (Gegner sind immer eine Gang/Schmuggler-Crew,
+# nie echte Personen, Beamte, Richter oder Institutionen).
+NO_QUEST_POIS = frozenset({"verfassungsgericht", "bundesgerichtshof", "rathaus"})
 
 
 class QuestError(ValueError):
@@ -77,8 +80,12 @@ def clamp_enemies(enemies) -> int:
 
 
 def mission_pois() -> list[Poi]:
-    """Alle POIs mit Tag mission (die einzigen erlaubten Quest-Ziele)."""
-    return [p for p in protocol.load_pois().pois if "mission" in p.tags]
+    """Alle POIs mit Tag mission ohne Behörden (NO_QUEST_POIS): die einzigen erlaubten Quest-Ziele."""
+    return [
+        p
+        for p in protocol.load_pois().pois
+        if "mission" in p.tags and p.id not in NO_QUEST_POIS
+    ]
 
 
 class QuestBook:
@@ -97,7 +104,7 @@ class QuestBook:
                 f"quest {self.active.quest_id} is still active: {self.active.objective}"
             )
         poi = protocol.load_pois().get(str(poi_id))
-        if poi is None or "mission" not in poi.tags:
+        if poi is None or "mission" not in poi.tags or poi.id in NO_QUEST_POIS:
             valid = ", ".join(p.id for p in mission_pois())
             raise QuestError(f"unknown place_id {poi_id!r}; valid: {valid}")
         n = clamp_enemies(enemies)

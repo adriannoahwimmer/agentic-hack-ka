@@ -308,6 +308,7 @@ Vorlage für einen neuen Abschnitt:
 
 ### Quest-NPC (Scheibe Quest)
 - Zweck: Ein NPC vergibt per Gemini-Function-Calling eine Quest zu einem echten Ort. Ob das Ziel erreicht und die Quest erfüllt ist, entscheidet nur der Server per Position und Kills.
+- Gegner sind immer eine rivalisierende Gang/Schmuggler-Crew, nie echte Personen, Beamte, Richter oder Institutionen (Quest-Prompt, Fallback-Texte). Behörden/Gerichte (`quests.NO_QUEST_POIS`, z. B. `verfassungsgericht`) sind serverseitig kein Quest-Ziel: `mission_pois()`, `QuestBook.create` und `lookup_place` lehnen sie ab.
 - Use-Cases:
   - Spieler steht unter 3 m beim NPC, drückt E → `POST /npc/talk`, Dialog mit Warteanzeige, das Spiel läuft weiter
   - Neue Quest → `quest_update` (`active`) per WS: Objective, Lichtsäule am Ziel, Pfeil über dem Spieler

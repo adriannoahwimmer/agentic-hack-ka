@@ -74,7 +74,7 @@ def remember(npc_id: str, line: str) -> None:
 def lookup_place(place_id: str, reason: str = "") -> dict:
     """Tool: Infos zu einem mission-POI (Name, Beschreibung). Fehler als {"error": ...}."""
     poi = protocol.load_pois().get(str(place_id))
-    if poi is None or "mission" not in poi.tags:
+    if poi is None or poi.id not in {p.id for p in quests.mission_pois()}:
         valid = ", ".join(p.id for p in quests.mission_pois())
         return {"error": f"unknown place_id {place_id!r}; valid: {valid}"}
     return {
@@ -173,7 +173,9 @@ def agent_config(npc: Npc) -> types.GenerateContentConfig:
         "Speak English, max 2 short sentences, stay in character, no real-world violence advice. "
         "When the player greets you or asks for work, call lookup_place for one place, "
         "then assign_quest there with 2-4 enemies. If a quest is already active, just "
-        "remind the player of it in plain text. Only these places exist: "
+        "remind the player of it in plain text. The enemies are ALWAYS members of a rival gang "
+        "or smuggling crew, never real people, police, officials, judges or institutions; "
+        "say so in title, objective and your line. Only these places exist: "
         f"{_place_list()}."
     )
     return types.GenerateContentConfig(
@@ -295,7 +297,7 @@ def fallback_talk(
     poi = protocol.load_pois().get(update.poi_id)
     text = (
         f"Got a job for you at {poi.name}. {poi.description} "
-        f"Some thugs moved in there, take out {update.remaining} of them."
+        f"A rival smuggling crew moved in there, take out {update.remaining} of them."
     )
     genai_log.log_fallback(
         agent=AGENT_NAME,

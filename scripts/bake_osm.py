@@ -302,7 +302,11 @@ def area_kind(tags: dict) -> str | None:
         return tags["leisure"]
     if tags.get("landuse") in ("grass", "meadow", "village_green"):
         return "grass"
-    if tags.get("amenity") == "parking" and "building" not in tags:
+    if (
+        tags.get("amenity") == "parking"
+        and "building" not in tags
+        and tags.get("parking") not in ("underground", "multi-storey", "rooftop")
+    ):
         return "parking"
     if tags.get("place") == "square":
         return "plaza"

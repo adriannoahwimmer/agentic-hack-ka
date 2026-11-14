@@ -34,7 +34,10 @@ export function createInput(canvas) {
   addEventListener('blur', () => { down.clear(); mouse.buttons.clear(); });
 
   canvas.addEventListener('click', () => {
-    if (document.pointerLockElement !== canvas) canvas.requestPointerLock?.();
+    if (document.pointerLockElement !== canvas) {
+      // Kann abgelehnt werden (z. B. direkt nach Esc); dann einfach erneut klicken.
+      Promise.resolve(canvas.requestPointerLock?.()).catch(() => {});
+    }
   });
   addEventListener('mousemove', (e) => {
     if (document.pointerLockElement !== canvas) return;

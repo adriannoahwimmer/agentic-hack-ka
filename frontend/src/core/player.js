@@ -13,7 +13,7 @@ import { animateWalk } from './models.js';
 const WALK_SPEED = 4.5;
 const SPRINT_SPEED = 8.5;
 const ACCEL = 14;
-const GRAVITY = 20;
+const HOVER = 0.06; // Abstand Kapsel–Boden in m
 const CAPSULE_HALF = 0.55;
 const CAPSULE_RADIUS = 0.35;
 const CENTER_Y = CAPSULE_HALF + CAPSULE_RADIUS; // Kapselmitte über dem Boden
@@ -49,18 +49,17 @@ export function createPlayer({ THREE, scene, camera, RAPIER, world, fixed, input
   scene.add(object3d);
 
   const body = world.createRigidBody(
-    RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, CENTER_Y + 0.05, spawn.z),
+    RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(spawn.x, CENTER_Y + HOVER, spawn.z),
   );
   const collider = world.createCollider(RAPIER.ColliderDesc.capsule(CAPSULE_HALF, CAPSULE_RADIUS), body);
+  // Die Stadt ist flach: Die Kapsel schwebt HOVER über dem Boden, der Controller rechnet nur
+  // horizontal gegen Wände. Mit Schwerkraft sank die Kapsel in den Boden-Collider und blieb hängen.
   const cc = world.createCharacterController(0.02);
-  cc.enableAutostep(0.35, 0.2, true);
-  cc.enableSnapToGround(0.4);
-  cc.setMaxSlopeClimbAngle((50 * Math.PI) / 180);
   cc.setApplyImpulsesToDynamicBodies(true);
+  cc.setSlideEnabled(true);
 
-  const pos = { x: spawn.x, y: CENTER_Y + 0.05, z: spawn.z };
+  const pos = { x: spawn.x, y: CENTER_Y + HOVER, z: spawn.z };
   const vel = { x: 0, z: 0 };
-  let vy = 0;
   let heading = 0;
   let yaw = 0; // Kamerarichtung, gleiche Konvention wie heading
   let pitch = 0.25; // > 0: Kamera oberhalb, blickt nach unten
@@ -86,15 +85,12 @@ export function createPlayer({ THREE, scene, camera, RAPIER, world, fixed, input
     const k = Math.min(1, ACCEL * dt);
     vel.x += (tx - vel.x) * k;
     vel.z += (tz - vel.z) * k;
-    vy -= GRAVITY * dt;
 
-    cc.computeColliderMovement(collider, { x: vel.x * dt, y: vy * dt, z: vel.z * dt });
+    cc.computeColliderMovement(collider, { x: vel.x * dt, y: 0, z: vel.z * dt }, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS);
     const m = cc.computedMovement();
-    if (cc.computedGrounded()) vy = -1;
     pos.x += m.x;
-    pos.y += m.y;
     pos.z += m.z;
-    if (pos.y < -10) Object.assign(pos, { x: spawn.x, y: CENTER_Y + 1, z: spawn.z }); // Notfall
+    pos.y = CENTER_Y + HOVER;
     body.setNextKinematicTranslation(pos);
     speed = Math.hypot(m.x, m.z) / dt;
 
@@ -163,7 +159,7 @@ export function createPlayer({ THREE, scene, camera, RAPIER, world, fixed, input
       object3d.visible = !v;
       collider.setEnabled(!v);
       if (!v && exitAt) {
-        Object.assign(pos, { x: exitAt.x, y: CENTER_Y + 0.2, z: exitAt.z });
+        Object.assign(pos, { x: exitAt.x, y: CENTER_Y + HOVER, z: exitAt.z });
         body.setTranslation(pos, true);
         vel.x = 0; vel.z = 0;
       }

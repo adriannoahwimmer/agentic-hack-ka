@@ -195,3 +195,9 @@ def test_checked_in_city_is_reproducible():
     for name, items in bake_osm.bake(raw).items():
         path = bake_osm.OUT_DIR / f"{name}.json"
         assert path.read_bytes() == bake_osm.dumps(items).encode("utf-8"), name
+
+
+@pytest.mark.parametrize("parking", ["underground", "multi-storey", "rooftop"])
+def test_hidden_parking_is_not_an_area(parking):
+    assert bake_osm.area_kind({"amenity": "parking", "parking": parking}) is None
+    assert bake_osm.area_kind({"amenity": "parking", "parking": "surface"}) == "parking"

@@ -21,7 +21,9 @@ const DRIVABLE = new Set([
   'residential', 'living_street', 'service', 'track',
 ]);
 const ROAD_COLOR = { drivable: 0x50545a, pedestrian: 0xb9ae9c, path: 0xcdbf9f };
-const AREA_COLOR = { park: 0x7fa65a, garden: 0x8db567, grass: 0x86ad5f, parking: 0x6b6e73, plaza: 0xc6baa6 };
+// Ein Grün für alle Grünflächen: Überlappungen (Rasen im Park) flimmern dann nicht sichtbar.
+const AREA_COLOR = { park: 0x7fa65a, garden: 0x7fa65a, grass: 0x7fa65a, parking: 0x6b6e73, plaza: 0xc6baa6 };
+const AREA_Y = { park: 0.02, garden: 0.02, grass: 0.02, parking: 0.03, plaza: 0.035 };
 const GROUND_COLOR = 0x9b9a88;
 
 /**
@@ -163,11 +165,10 @@ function buildRoads(roads) {
 function buildAreas(areas) {
   const gb = new GeoBuilder();
   const color = new THREE.Color();
-  // Große Flächen zuerst, Plätze zuletzt (gleiches y, Reihenfolge entscheidet nichts, aber
-  // Plätze liegen minimal höher, damit sie über Rasen liegen).
+  // Je Art eine eigene Höhe: Plätze liegen über Parkplätzen, beide über Grün.
   for (const a of areas) {
     color.setHex(AREA_COLOR[a.kind] ?? AREA_COLOR.grass);
-    addFlat(gb, a.pts, a.kind === 'plaza' || a.kind === 'parking' ? 0.03 : 0.02, color);
+    addFlat(gb, a.pts, AREA_Y[a.kind] ?? 0.02, color);
   }
   return gb.build();
 }

@@ -15,6 +15,7 @@ import { createCombat } from './combat.js';
 import { createHud } from './hud.js';
 import { createInput } from './input.js';
 import * as models from './models.js';
+import { createPedestrians } from './pedestrians.js';
 import { createPhysics } from './physics.js';
 import { createPlayer } from './player.js';
 import { createRenderer } from './renderer.js';
@@ -55,6 +56,7 @@ export async function createCore({ net }) {
     spawn: { x: spawnPoi.x, z: spawnPoi.z + 20 },
   });
   const combat = createCombat({ THREE, scene, camera, RAPIER, world: physicsWorld, input, hud, net, player, worldApi });
+  const pedestrians = createPedestrians({ scene, models, worldApi, combat, player });
 
   // Start-Overlay bis zum Pointer-Lock; danach nur noch bei Esc.
   document.addEventListener('pointerlockchange', () => hud.setStartVisible(!input.locked()));
@@ -99,6 +101,7 @@ export async function createCore({ net }) {
         physics.step(dt);
         player.update(dt);
         combat.update(dt);
+        pedestrians.update(dt);
         for (const fn of updates) {
           try { fn(dt, now / 1000); } catch (err) { console.error('[core] onUpdate', err); }
         }
@@ -111,6 +114,7 @@ export async function createCore({ net }) {
     },
   };
   // Interne Teile für weitere core-Module (Fahrzeuge, Fußgänger), nicht Teil des Vertrags.
-  ctx._core = { physics, player, combat, input, city };
+  ctx._core = { physics, player, combat, input, city, pedestrians };
+  if (import.meta.env.DEV) window.__ctx = ctx; // nur im Vite-Dev-Server, für Konsole und Smoke-Tests
   return ctx;
 }

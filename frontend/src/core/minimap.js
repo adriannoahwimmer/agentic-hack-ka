@@ -41,7 +41,10 @@ function drawBase(data, b) {
     pts.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
     g.closePath();
   };
-  for (const a of data.areas) {
+  // Gleiche Reihenfolge wie in 3D (core/city.js): Plätze unten, Parkplätze, Grün oben.
+  const order = { plaza: 0, parking: 1 };
+  const areas = [...data.areas].sort((a, b) => (order[a.kind] ?? 2) - (order[b.kind] ?? 2));
+  for (const a of areas) {
     g.fillStyle = a.kind === 'plaza' ? COLORS.plaza : a.kind === 'parking' ? COLORS.parking : COLORS.green;
     poly(a.pts);
     g.fill();
@@ -56,7 +59,14 @@ function drawBase(data, b) {
     g.stroke();
   }
   g.fillStyle = COLORS.building;
-  for (const bd of data.buildings) { poly(bd.pts); g.fill(); }
+  for (const bd of data.buildings) {
+    g.beginPath();
+    for (const ring of [bd.pts, ...(bd.holes ?? [])]) {
+      ring.forEach(([x, z], i) => (i ? g.lineTo(x, z) : g.moveTo(x, z)));
+      g.closePath();
+    }
+    g.fill('evenodd'); // Innenhöfe bleiben frei
+  }
   return { canvas: c, ox, oz };
 }
 

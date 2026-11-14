@@ -23,8 +23,26 @@ const DRIVABLE = new Set([
 const ROAD_COLOR = { drivable: 0x50545a, pedestrian: 0xb9ae9c, path: 0xcdbf9f };
 // Ein Grün für alle Grünflächen: Überlappungen (Rasen im Park) flimmern dann nicht sichtbar.
 const AREA_COLOR = { park: 0x7fa65a, garden: 0x7fa65a, grass: 0x7fa65a, parking: 0x6b6e73, plaza: 0xc6baa6 };
-const AREA_Y = { park: 0.02, garden: 0.02, grass: 0.02, parking: 0.03, plaza: 0.035 };
+// Plätze unten, Grün darüber, Wege (roads, 0,04–0,06) obendrauf: So zeigt z. B. der Schlossplatz
+// seine Rasenflächen und Wege statt einer einzigen Platzfläche.
+const AREA_Y = { plaza: 0.012, parking: 0.018, park: 0.026, garden: 0.026, grass: 0.026 };
 const GROUND_COLOR = 0x9b9a88;
+
+/**
+ * Punkt-in-Polygon (Strahlverfahren) für einen Ring [[x, z], ...].
+ * @param {number} x
+ * @param {number} z
+ * @param {number[][]} ring
+ */
+export function pointInRing(x, z, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, zi] = ring[i];
+    const [xj, zj] = ring[j];
+    if ((zi > z) !== (zj > z) && x < ((xj - xi) * (z - zi)) / (zj - zi) + xi) inside = !inside;
+  }
+  return inside;
+}
 
 /**
  * Kleine, stabile Hash-Funktion (für Farbwahl pro Gebäude-Id).
@@ -63,14 +81,16 @@ class GeoBuilder {
  * @param {number[][]} pts Ring [[x, z], ...], offen
  * @param {number} y
  * @param {THREE.Color} color
+ * @param {number[][][]} [holes] Löcher (Innenhöfe), Ringe wie pts
  */
-function addFlat(gb, pts, y, color) {
-  const contour = pts.map(([x, z]) => new THREE.Vector2(x, z));
-  const tris = THREE.ShapeUtils.triangulateShape(contour, []);
+function addFlat(gb, pts, y, color, holes = []) {
+  const v2 = (ring) => ring.map(([x, z]) => new THREE.Vector2(x, z));
+  const tris = THREE.ShapeUtils.triangulateShape(v2(pts), holes.map(v2));
+  const all = pts.concat(...holes); // Indizes der Dreiecke zählen über Außenring + Löcher
   for (const [a, b, c] of tris) {
-    const [ax, az] = pts[a];
-    const [bx, bz] = pts[b];
-    const [cx, cz] = pts[c];
+    const [ax, az] = all[a];
+    const [bx, bz] = all[b];
+    const [cx, cz] = all[c];
     // Windung so wählen, dass die Vorderseite nach oben zeigt (y-Komponente des Kreuzprodukts > 0).
     const up = (bz - az) * (cx - ax) - (bx - ax) * (cz - az) > 0;
     if (up) gb.tri([ax, y, az], [bx, y, bz], [cx, y, cz], [0, 1, 0], color);
@@ -80,13 +100,18 @@ function addFlat(gb, pts, y, color) {
 
 /**
  * Gebäude-Mesh (Wände + Dächer) und Collider-Daten (nur Wände, indiziert).
- * @param {{id: string, h: number, pts: number[][]}[]} buildings
+ * Innenhöfe (`holes`) bekommen eigene Wände; deren Normalen zeigen in den Hof, weil der Bake
+ * Löcher gegen den Uhrzeigersinn liefert. `ranges` merkt sich pro OSM-Id die Vertex-Bereiche
+ * im zusammengeführten Mesh (zum Ausblenden einzelner Gebäude).
+ * @param {{id: string, h: number, pts: number[][], holes?: number[][][]}[]} buildings
  * @param {Set<string>} landmarkIds osm_refs der POIs
  */
 function buildBuildings(buildings, landmarkIds) {
   const gb = new GeoBuilder();
   const colVerts = [];
   const colIdx = [];
+  /** @type {Map<string, {start: number, count: number}[]>} */
+  const ranges = new Map();
   const wallC = new THREE.Color();
   const shade = new THREE.Color();
   const roofC = new THREE.Color();
@@ -96,29 +121,36 @@ function buildBuildings(buildings, landmarkIds) {
     wallC.setHex(landmark ? LANDMARK.wall : WALL_COLORS[hsh % WALL_COLORS.length]);
     roofC.setHex(landmark ? LANDMARK.roof : ROOF_COLORS[(hsh >>> 8) % ROOF_COLORS.length]);
     const { h, pts } = b;
-    const n = pts.length;
-    for (let i = 0; i < n; i++) {
-      const [ax, az] = pts[i];
-      const [bx, bz] = pts[(i + 1) % n];
-      const dx = bx - ax;
-      const dz = bz - az;
-      const len = Math.hypot(dx, dz) || 1;
-      const nrm = [dz / len, 0, -dx / len]; // außen bei Ring im Uhrzeigersinn (Bake)
-      // Leichte Schattierung je Himmelsrichtung, damit Kanten lesbar sind.
-      shade.copy(wallC).multiplyScalar(0.82 + 0.18 * Math.abs(nrm[0]));
-      const a0 = [ax, 0, az];
-      const b0 = [bx, 0, bz];
-      const b1 = [bx, h, bz];
-      const a1 = [ax, h, az];
-      gb.tri(a0, a1, b1, nrm, shade);
-      gb.tri(a0, b1, b0, nrm, shade);
-      const base = colVerts.length / 3;
-      colVerts.push(ax, 0, az, bx, 0, bz, bx, h, bz, ax, h, az);
-      colIdx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    const holes = b.holes ?? [];
+    const start = gb.pos.length / 3;
+    for (const ring of [pts, ...holes]) {
+      const n = ring.length;
+      for (let i = 0; i < n; i++) {
+        const [ax, az] = ring[i];
+        const [bx, bz] = ring[(i + 1) % n];
+        const dx = bx - ax;
+        const dz = bz - az;
+        const len = Math.hypot(dx, dz) || 1;
+        const nrm = [dz / len, 0, -dx / len]; // außen bei Ring im Uhrzeigersinn (Bake)
+        // Leichte Schattierung je Himmelsrichtung, damit Kanten lesbar sind.
+        shade.copy(wallC).multiplyScalar(0.82 + 0.18 * Math.abs(nrm[0]));
+        const a0 = [ax, 0, az];
+        const b0 = [bx, 0, bz];
+        const b1 = [bx, h, bz];
+        const a1 = [ax, h, az];
+        gb.tri(a0, a1, b1, nrm, shade);
+        gb.tri(a0, b1, b0, nrm, shade);
+        const base = colVerts.length / 3;
+        colVerts.push(ax, 0, az, bx, 0, bz, bx, h, bz, ax, h, az);
+        colIdx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      }
     }
-    addFlat(gb, pts, h, roofC);
+    addFlat(gb, pts, h, roofC, holes);
+    const baseId = b.id.split('#')[0];
+    if (!ranges.has(baseId)) ranges.set(baseId, []);
+    ranges.get(baseId).push({ start, count: gb.pos.length / 3 - start });
   }
-  return { geometry: gb.build(), colVerts: new Float32Array(colVerts), colIdx: new Uint32Array(colIdx) };
+  return { geometry: gb.build(), colVerts: new Float32Array(colVerts), colIdx: new Uint32Array(colIdx), ranges };
 }
 
 /**
@@ -168,7 +200,7 @@ function buildAreas(areas) {
   // Je Art eine eigene Höhe: Plätze liegen über Parkplätzen, beide über Grün.
   for (const a of areas) {
     color.setHex(AREA_COLOR[a.kind] ?? AREA_COLOR.grass);
-    addFlat(gb, a.pts, AREA_Y[a.kind] ?? 0.02, color);
+    addFlat(gb, a.pts, AREA_Y[a.kind] ?? 0.02, color, a.holes ?? []);
   }
   return gb.build();
 }
@@ -240,7 +272,49 @@ export function buildCity({ scene, RAPIER, world, data, pois }) {
   for (const [x, z, sx, sz] of [[cx, minZ - 2, hx, 1], [cx, maxZ + 2, hx, 1], [minX - 2, cz, 1, hz], [maxX + 2, cz, 1, hz]]) {
     world.createCollider(RAPIER.ColliderDesc.cuboid(sx, 20, sz).setTranslation(x, 20, z), body);
   }
-  return { bounds, meshes: [buildingsMesh, roadsMesh, areasMesh, ground] };
+  // Gebäude ausblenden (z. B. wenn ein Landmark-Modell an seiner Stelle steht). Der Collider bleibt.
+  const posAttr = b.geometry.getAttribute('position');
+  const saved = new Map(); // baseId -> [{start, data}]
+
+  /**
+   * Gebäude (alle Teile einer OSM-Id) unsichtbar machen: Vertices auf einen Punkt legen.
+   * @param {string} osmRef z. B. 'way/316433983'
+   * @returns {boolean} false, wenn die Id nicht in buildings.json steht
+   */
+  function hideBuilding(osmRef) {
+    const id = String(osmRef).split('#')[0];
+    const parts = b.ranges.get(id);
+    if (!parts) return false;
+    if (saved.has(id)) return true;
+    saved.set(id, parts.map(({ start, count }) => ({ start, data: posAttr.array.slice(start * 3, (start + count) * 3) })));
+    for (const { start, count } of parts) posAttr.array.fill(0, start * 3, (start + count) * 3);
+    posAttr.needsUpdate = true;
+    return true;
+  }
+
+  /** Ausgeblendetes Gebäude wieder zeigen. */
+  function showBuilding(osmRef) {
+    const id = String(osmRef).split('#')[0];
+    const parts = saved.get(id);
+    if (!parts) return false;
+    for (const { start, data } of parts) posAttr.array.set(data, start * 3);
+    saved.delete(id);
+    posAttr.needsUpdate = true;
+    return true;
+  }
+
+  /**
+   * Alle Gebäude ausblenden, deren Grundriss (x, z) enthält.
+   * @returns {string[]} ausgeblendete Ids
+   */
+  function hideBuildingsAt(x, z) {
+    const hit = data.buildings.filter((bd) => pointInRing(x, z, bd.pts)).map((bd) => bd.id.split('#')[0]);
+    const ids = [...new Set(hit)];
+    ids.forEach(hideBuilding);
+    return ids;
+  }
+
+  return { bounds, meshes: [buildingsMesh, roadsMesh, areasMesh, ground], hideBuilding, showBuilding, hideBuildingsAt };
 }
 
 export { DRIVABLE };

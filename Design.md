@@ -203,11 +203,13 @@ Vorlage für einen neuen Abschnitt:
   - `heading`: Rotation um y; Blickrichtung (−sin h, −cos h) in (x, z), also h = 0 → Norden. Modelle schauen nach −z.
   - Zusätze zu `ctx` (additiv, Stand W2):
     - `ctx.combat.onShot(fn({x, z, weapon})) -> off`: lokaler Beobachter für jeden Schuss (z. B. Gegner reagieren lassen).
+    - `ctx.world.hideBuilding(osmRef) -> bool`, `showBuilding(osmRef)`, `hideBuildingsAt(x, z) -> ids`: blenden OSM-Gebäude (alle Teile einer Id) im Stadt-Mesh aus, der Collider bleibt. Gedacht für Landmark-Modelle (`frontend/src/landmarks/`). Das Schloss besteht in OSM aus `way/316433983` (Hauptbau, = `poi('schloss').osm_ref`) und Anbauten bzw. Dächern in der Nähe: `way/364650691`, `way/364650692`, `way/364650695` (vor dem Hauptbau) sowie `way/364650693` und `way/364650694` (Dächer seitlich).
     - `ctx.world.poi(id)`, `ctx.world.roadPoints` (Punkte alle 10 m auf befahrbaren Straßen und Fußgängerzonen, mit `heading`), `ctx.world.bounds`.
     - `ctx.world.randomRoadPoint()` liefert zusätzlich `heading` (Straßenrichtung).
     - `ctx.hud.wanted()`, `setConnected(ok)`, `setWeapon(name)`, `hitMarker()`, `setStartVisible(v)`.
     - `models.car()` setzt `userData.lightbar` = [rot, blau] (Polizei) und `userData.wheels`; `models.person()` setzt `userData.legs`/`arms`. `animateWalk(obj, speed, dt)` ist aus `core/models.js` importierbar.
   - `ctx._core` (Spieler, Physik, Kampf) ist intern und kein Vertrag. Im Vite-Dev-Server hängt `ctx` an `window.__ctx` (Konsole, Smoke-Tests).
+  - Spawn: Schlossplatz, Mittelweg zwischen den Rasenflächen (POI + 20 m Süd), Blick nach Norden aufs Schloss (`SPAWN_HEADING = 0` in `core/index.js`).
   - Debug: `/play/?view=top` zeigt die Stadt von oben.
 - Agent und Modell: keine (0 Gemini-Requests).
 - Offene Punkte:
@@ -222,9 +224,11 @@ Vorlage für einen neuen Abschnitt:
   - Backen (offline, Default): `python scripts/bake_osm.py` → `frontend/public/city/{buildings,roads,areas}.json`. Der Bake ist deterministisch (byte-gleich, Test).
 - Dateien: `scripts/bake_osm.py`, `data/osm/raw.json`, `frontend/public/city/*.json`, `frontend/src/core/city.js`, `tests/test_bake_osm.py`
 - Formate (Weltkoordinaten über `geo.py`, Meter, gerundet auf 0,1 m):
-  - `buildings.json`: `[{id, h, pts}]`. `id` ist die OSM-Referenz (`way/123`, Teile von Multipolygonen `way/123#1`). Höhe aus `height`, sonst `building:levels` × 3,2 m, sonst 12 m (geclampt 2,5–120 m). Ring offen, im Uhrzeigersinn von oben (Shoelace in (x, z) > 0), Douglas-Peucker 0,5 m.
+  - `buildings.json`: `[{id, h, pts, holes?}]`. `id` ist die OSM-Referenz (`way/123`, Teile von Multipolygonen `way/123#1`). Höhe aus `height`, sonst `building:levels` × 3,2 m, sonst 12 m (geclampt 2,5–120 m). Ring offen, im Uhrzeigersinn von oben (Shoelace in (x, z) > 0), Douglas-Peucker 0,5 m.
   - `roads.json`: `[{id, kind, w, pts}]`, `kind` = OSM-`highway`, `w` aus `width` oder Tabelle. Ohne Gehsteige, Querungen, Indoor-Korridore und Baustellen.
-  - `areas.json`: `[{id, kind, pts}]`, `kind` aus park, garden, grass, parking, plaza.
+  - `areas.json`: `[{id, kind, pts, holes?}]`, `kind` aus park, garden, grass, parking, plaza.
+  - `holes` (additiv, nur bei Multipolygon-Relationen mit Innenringen): Innenhöfe bzw. Aussparungen, Ringe gegen den Uhrzeigersinn. Stand: 19 Gebäude mit 114 Höfen, 2 Flächen. Jeder Innenring gehört zu dem Außenring, der seinen ersten Punkt enthält. Höfe bekommen eigene Wände und Collider. Vorher wurden Innenringe ignoriert und die Höfe waren zugedeckt.
+  - Reihenfolge der Flächen in 3D und auf der Minimap: Plätze unten, Parkplätze, Grün darüber, Wege obendrauf. So zeigt der Schlossplatz seine Rasenflächen und Wege.
   - Budget: buildings ≤ 1,5 MB, roads ≤ 0,5 MB, areas ≤ 0,5 MB, raw ≤ 8 MB, sonst Abbruch. Stand 2026-11-14: 959 Gebäude (136 KB), 1546 Straßen (156 KB), 236 Flächen (54 KB).
 - Darstellung (`city.js`): Gebäude, Straßen und Flächen je ein Mesh mit Vertex-Farben (4 Draw-Calls mit Boden). Gebäude der POIs (`osm_ref`) bekommen Landmark-Farben. Collider: ein statisches Trimesh aus allen Wänden, Boden-Quader und vier Randwände.
 - Schnittstellen: keine Nachrichten. Liest `data/pois.json` (nur lesend).

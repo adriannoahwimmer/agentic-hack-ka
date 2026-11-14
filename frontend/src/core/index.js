@@ -14,6 +14,7 @@ import { buildCity, loadCityData } from './city.js';
 import { createCombat } from './combat.js';
 import { createHud } from './hud.js';
 import { createInput } from './input.js';
+import { addLandmarks } from '../landmarks/index.js';
 import * as models from './models.js';
 import { createLook } from '../look/index.js';
 import { createMinimap } from './minimap.js';
@@ -53,6 +54,7 @@ export async function createCore({ net }) {
 
   const worldApi = createWorld({ roads: data.roads, bounds: null });
   const city = buildCity({ scene, RAPIER, world: physicsWorld, data, pois: worldApi.pois });
+  addLandmarks({ scene, data }); // Einhängepunkt Landmarks (frontend/src/landmarks/)
   worldApi.bounds = city.bounds;
 
   const input = createInput(renderer.domElement);

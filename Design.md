@@ -365,3 +365,14 @@ _noch leer_
   - `gemini-3.1-flash-lite` lieferte in der Messung 2 von 6 Mal 503. Als Fallback reicht das, als Primärmodell nicht.
   - Mit Polizei-Function-Call braucht `gemini-3.1-flash-lite` 5 bis 12,5 s (1 von 5 Calls: 504). Spiel-Agenten nutzen es deshalb nicht, sondern den geskripteten Fallback.
   - Die Decisions API (`gemini-decision-1`) funktioniert mit dem Key. Für geschlossene Agent-Entscheidungen ist sie ein Kandidat, eingebaut ist sie noch nicht (`agent_docs/gemini_api.md`).
+
+### Landmarks (Scheibe Landmarks)
+- Zweck: Handmodellierte Low-Poly-Wahrzeichen machen die OSM-Blöcke erkennbar: Schloss (Turm, Mansarddach, Mittelgiebel), Pyramide, Stadtkirche (Portikus, Turm), Rathaus (Turm, Dach).
+- Use-Cases: Orientierung im Spiel (der Schlossturm ist von überall sichtbar), Quest-Ziele, Demo-Video.
+- Dateien: `frontend/src/landmarks/index.js` (`addLandmarks({scene, data})`), `kit.js` (Grundkörper, Merge), ein Modul pro Landmark. Einhängepunkt ist eine Zeile in `core/index.js` direkt nach `buildCity`.
+- Lage: Jedes Landmark sucht seinen Grundriss per `osm_ref` in `data.buildings` (über `geo.py` gebacken) und richtet sich an der längsten Kante aus (das Schloss bleibt Nord-Süd). Es gibt keine eigenen Koordinaten.
+- Robustheit: Fehlt eine `osm_ref` oder ist sie mehrteilig (`#0`, `#1`, ...), wird nur dieses Landmark mit `console.warn` übersprungen. Das gilt auch für das Ausblenden des Pyramiden-Blocks: Dessen Dreiecke im Mesh `city-buildings` werden zur Laufzeit auf einen Punkt unter dem Boden gelegt. Der Collider bleibt.
+- Performance (Ziel `?q=medium`, Intel HD 620): Alle Landmarks sind ein Mesh mit einem Lambert-Material (der Look-Pass macht daraus ein Standard-Material mit Schatten) und Vertex-Farben. Das kostet +1 Draw-Call, unter 3.000 Dreiecke, keine Texturen und keinen Code pro Frame. Die Kollision bleibt beim Wand-Trimesh der Stadt.
+- Schnittstellen: keine Nachrichten, liest nur `data.buildings`.
+- Referenzen: Proportionen und Farben nach lokalen Google-Earth-Screenshots. Die liegen nicht im Repo.
+- Offene Punkte: Die Säulen des Portikus haben keine Kollision. Sollte `feat/welt` Relationen künftig mehrteilig backen, fehlt das Rathaus, bis `findFootprint` die Teile zusammenfasst.

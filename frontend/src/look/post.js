@@ -42,6 +42,11 @@ export function createPost({ renderer, scene, camera }) {
     /** AO an/aus (Bloom und Tonemapping bleiben). */
     setAo(on) { ao.enabled = on; },
     aoEnabled: () => ao.enabled,
+    /** Pixel-Ratio der Render-Targets (Qualitätsstufe). */
+    setPixelRatio(pr) {
+      composer.setPixelRatio(pr);
+      composer.setSize(innerWidth, innerHeight);
+    },
     /** Bloom-Schwelle setzen (HDR-Luminanz vor dem Tonemapping). */
     setBloomThreshold(t) { bloom.threshold = t; },
   };

@@ -84,7 +84,7 @@ export function createHud(root, opts = {}) {
   dialog.hidden = true;
   const cross = el(root, 'h-cross');
   const weapon = el(root, 'h-weapon', 'Pistol');
-  el(root, 'h-help', 'WASD move · Shift sprint · Mouse aim · LMB shoot · 1 pistol / 2 SMG · F enter/exit car · Space handbrake · R flip car · P post-FX · Esc release mouse');
+  el(root, 'h-help', 'WASD move · Shift sprint · Mouse aim · LMB shoot · 1 pistol / 2 SMG · F enter/exit car · Space handbrake · R flip car · P post-FX · Q quality · M map · Esc release mouse');
   const panels = el(root, 'h-panels');
   const start = el(root, 'h-start');
   start.innerHTML = '<div>Click to play</div><small>Karlsruhe, around the Palace · real OpenStreetMap data</small>';

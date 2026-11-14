@@ -14,7 +14,7 @@ Modelle und SDK-Fragen zuerst im Skill `gemini-api-dev` nachschlagen (`.claude/s
 | Variable | Default | Wirkung |
 |---|---|---|
 | `GEMINI_API_KEY` | – (Pflicht) | Liest nur `get_client()` (gemini.py). Er wird explizit übergeben, damit ein gesetztes `GOOGLE_API_KEY` nicht gewinnt. |
-| `GEMINI_MODEL_AGENT` | `gemini-3.5-flash-lite` | `/agent` (Polizei- und Gang-Agenten) |
+| `GEMINI_MODEL_AGENT` | `gemini-3.5-flash-lite` | `/agent` (Starter). Spiel-Agenten: `GEMINI_MODEL_POLICE`, `_QUEST`, `_MAPS`, `_TTS` |
 | `GEMINI_MODEL_CHAT` | `gemini-3.5-flash-lite` | `/chat` (NPC-Dialoge) |
 | `GEMINI_MODEL_FALLBACK` | `gemini-3.1-flash-lite` | Ausweichmodell nach 5xx |
 | `GEMINI_THINKING_LEVEL` | `low` | für `/agent` und `/chat`, auch beim Fallback (`THINKING` in main.py) |

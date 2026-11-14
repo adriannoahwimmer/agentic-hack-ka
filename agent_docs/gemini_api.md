@@ -9,15 +9,15 @@ Modelle und SDK-Fragen zuerst im Skill `gemini-api-dev` nachschlagen (`.claude/s
   - Fehlt die `.env` (z. B. auf Codesphere), passiert nichts.
 - Jede Konstante ist per **gleichnamiger** Env-Variable überschreibbar.
   - Leere Werte bedeuten Default.
-  - Ungültige Zahlen brechen den Start mit dem Variablennamen in der Meldung ab (`_env_number`, config.py:29).
+  - Ungültige Zahlen brechen den Start mit dem Variablennamen in der Meldung ab (`_env_number`, config.py).
 
 | Variable | Default | Wirkung |
 |---|---|---|
-| `GEMINI_API_KEY` | – (Pflicht) | Liest nur `get_client()` (main.py:37). Er wird explizit übergeben, damit ein gesetztes `GOOGLE_API_KEY` nicht gewinnt. |
+| `GEMINI_API_KEY` | – (Pflicht) | Liest nur `get_client()` (gemini.py). Er wird explizit übergeben, damit ein gesetztes `GOOGLE_API_KEY` nicht gewinnt. |
 | `GEMINI_MODEL_AGENT` | `gemini-3.5-flash-lite` | `/agent` (Polizei- und Gang-Agenten) |
 | `GEMINI_MODEL_CHAT` | `gemini-3.5-flash-lite` | `/chat` (NPC-Dialoge) |
 | `GEMINI_MODEL_FALLBACK` | `gemini-3.1-flash-lite` | Ausweichmodell nach 5xx |
-| `GEMINI_THINKING_LEVEL` | `low` | für `/agent` und `/chat`, auch beim Fallback (main.py:202-214) |
+| `GEMINI_THINKING_LEVEL` | `low` | für `/agent` und `/chat`, auch beim Fallback (`THINKING` in main.py) |
 | `MAX_AGENT_STEPS` | `8` | max. Loop-Schritte, also Requests, pro `/agent` |
 | `GEMINI_TIMEOUT_MS` | `15000` | Deadline pro Request, siehe "Timeout = Server-Deadline" und "Latenz mit Polizei-Function-Call" |
 | `GEMINI_TRANSPORT_ATTEMPTS` | `2` | SDK-Versuche bei Timeout, Verbindungsabbruch oder 408 |
@@ -37,7 +37,7 @@ Modelle und SDK-Fragen zuerst im Skill `gemini-api-dev` nachschlagen (`.claude/s
 - Neu prüfen: `client.models.list()` und dabei `m.name` sowie `m.supported_actions` ausgeben. Das kostet kein Generierungs-Kontingent.
 
 ## Latenz der Textmodelle (2026-11-14, ca. 11:45 Uhr)
-Je Modell 3 Calls über `main.generate()` mit `thinking_level=low` und Timeout 30 s, ohne Retry und ohne Fallback. Die Modelle liefen abwechselnd.
+Je Modell 3 Calls über `generate()` (damals main.py, heute gemini.py) mit `thinking_level=low` und Timeout 30 s, ohne Retry und ohne Fallback. Die Modelle liefen abwechselnd.
 - **kurz**: "Antworte nur mit dem Wort: ok", ohne Tools.
 - **tool**: "Was ist 17 * 23 + 4?" mit `AGENT_CONFIG` (get_time, calculator). Gemessen bis zur Antwort mit dem Function-Call, ohne Tool-Roundtrip. Erfolg heißt: Es kam ein `calculator`-Call.
 
@@ -113,13 +113,14 @@ Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem H
 - Abgerechnet werden nur Input-Tokens. Kein Context-Caching, keine Batch-, Flex- oder Priority-Inference.
 - Fehler laut Doku: 400 bei Safety-Blocks oder verletzten Limits. 429/5xx-Verhalten ist nicht dokumentiert.
 - Passt für geschlossene Spielentscheidungen (Polizei verfolgt ja/nein, Gang-Reaktion wählen), statt Structured Output über ein Textmodell.
-- Noch nicht in `main.py` eingebaut. Retry, Fallback und JSON-Lines-Log aus `generate()` greifen dafür also nicht.
+- Noch nicht eingebaut. Retry, Fallback, Budget und JSON-Lines-Log aus `gemini.generate()` greifen dafür also nicht.
 - Doku: aistudio.google.com/docs/decisions-api.md und `.../models/gemini-decision-1.md`
 
 ## SDK und Client
 - Import: `from google import genai` und `from google.genai import errors, types`.
-- Der Client wird lazy erzeugt und gecacht (`get_client`, main.py:36-53). Ohne Key antwortet der Healthcheck trotzdem.
-- `generate(contents, model, gen_config)` (main.py:64-124) ist der einzige Aufrufpunkt. Er gibt `(response, genutztes_modell)` zurück.
+- Der Client wird lazy erzeugt und gecacht (`get_client`, gemini.py). Ohne Key antwortet der Healthcheck trotzdem.
+- `gemini.generate(contents, model, gen_config, *, agent, attempts, timeout_ms, use_fallback_model)` ist der einzige Aufrufpunkt. Er gibt `(response, genutztes_modell)` zurück. `gemini.agenerate(...)` ist dasselbe im Thread-Pool, für async Code (Spiel-Agenten).
+- Jeder Versuch schreibt eine Zeile nach `logs/genai.jsonl` (`genai_log.log_call`, Format `protocol.GenaiLogLine`) und zählt gegen das Budget (`gemini.BUDGET`).
 - `/chat` und `/agent` liefern das tatsächlich genutzte Modell im Feld `model` zurück. So sieht man, ob der Fallback gegriffen hat.
 
 ## Timeout = Server-Deadline
@@ -127,31 +128,31 @@ Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem H
 - Gemini bricht nach dieser Zeit selbst ab und antwortet mit **504 DEADLINE_EXCEEDED**. Ein clientseitiger httpx-Timeout tritt deshalb praktisch nicht auf.
 - Folge: Ein 504 bedeutet "das Modell war innerhalb unserer Deadline nicht fertig". Derselbe Request am selben Modell läuft wieder hinein, deshalb geht es bei 504 sofort zum Fallback.
 
-## Fehler- und Retry-Logik (main.py:64-124)
+## Fehler- und Retry-Logik (`gemini.generate`)
 | Fall | Verhalten | HTTP an den Client |
 |---|---|---|
 | 500, 502, 503 | bis zu 3 Versuche pro Modell, Backoff zwischen den Versuchen 1-2 s, dann 2-4 s (exponentiell mit Jitter, max. 8 s). Danach dasselbe mit dem Fallback-Modell. | 200, wenn ein Versuch klappt; sonst 503 "Gemini überlastet (A -> B)" |
-| 504 | sofort zum Fallback-Modell, ohne Retry am selben Modell (`FALLBACK_IMMEDIATELY_STATUS`, config.py:72) | wie oben |
+| 504 | sofort zum Fallback-Modell, ohne Retry am selben Modell (`FALLBACK_IMMEDIATELY_STATUS`, config.py) | wie oben |
 | 429 | **kein** Retry, **kein** Fallback | 429 "Gemini 429 bei <modell>: Spend-Cap erreicht? aistudio.google.com/spend (<Gemini-Meldung>)" |
 | andere 4xx (400, 403, 404 ...) | kein Retry | 502 mit Gemini-Code und Meldung |
 | Client-Init scheitert (kein Key) | – | 500 "GEMINI_API_KEY gesetzt?" |
-| clientseitiger Timeout oder Verbindungsabbruch | SDK-Retry (`retry_options`, main.py:46-51, nur Transportfehler und 408) | unbehandelt, also 500 |
+| clientseitiger Timeout oder Verbindungsabbruch | SDK-Retry (`retry_options` in `get_client`, nur Transportfehler und 408) | unbehandelt, also 500 |
 
 - Ist das Modell selbst schon das Fallback-Modell, gibt es keine doppelte Runde.
 - Warum 429 nicht wiederholt wird: Bei Tier 3 heißt 429 meist "Spend-Cap des Projekts erreicht". Retries und Fallback helfen dann nicht. Prüfen bzw. anheben unter aistudio.google.com/spend.
 - Retries und Fallbacks werden als `WARNING` geloggt: Modell, Statuscode und Gemini-Meldung, kein Key.
 - Worst Case bei hängendem Primärmodell: etwa `GEMINI_TIMEOUT_MS` (15 s) plus die Fallback-Dauer (gemessen 5 bis 12,5 s).
 
-## Tool-Loop (`GET /agent`, main.py:251-288)
-- Automatic Function Calling ist bewusst aus (main.py:212). Der Loop ist manuell, damit jeder Schritt sichtbar und testbar bleibt.
-- Tools sind als `FunctionDeclaration` mit `parameters_json_schema` deklariert (main.py:179-200).
+## Tool-Loop (`GET /agent`, main.py)
+- Automatic Function Calling ist bewusst aus (main.py). Der Loop ist manuell, damit jeder Schritt sichtbar und testbar bleibt.
+- Tools sind als `FunctionDeclaration` mit `parameters_json_schema` deklariert (main.py).
 - Ein Durchlauf:
   1. `generate()` aufrufen.
   2. `response.function_calls` prüfen. Ist es leer, wird die Antwort zurückgegeben.
-  3. Den Modell-Turn `response.candidates[0].content` unverändert anhängen (main.py:269). Er enthält die Thought-Signatures.
-  4. `run_tool()` aufrufen (main.py:217).
-  5. Pro Call einen `FunctionResponse` mit derselben `id` und demselben `name` bauen und als `role="user"` anhängen (main.py:271-283).
-- **Sticky Fallback** (main.py:263): Musste ein Schritt auf das Fallback-Modell ausweichen, laufen alle weiteren Schritte dieses Requests dort. So bekommen nicht zwei Modelle abwechselnd die Signatures des jeweils anderen.
+  3. Den Modell-Turn `response.candidates[0].content` unverändert anhängen (main.py). Er enthält die Thought-Signatures.
+  4. `run_tool()` aufrufen (main.py).
+  5. Pro Call einen `FunctionResponse` mit derselben `id` und demselben `name` bauen und als `role="user"` anhängen (main.py).
+- **Sticky Fallback** (main.py): Musste ein Schritt auf das Fallback-Modell ausweichen, laufen alle weiteren Schritte dieses Requests dort. So bekommen nicht zwei Modelle abwechselnd die Signatures des jeweils anderen.
 - **Offen:** Ob das Fallback-Modell (`gemini-3.1-flash-lite`) mitten im Loop einen Verlauf mit Signatures von `gemini-3.5-flash-lite` akzeptiert, ist für `generateContent` nicht dokumentiert und nicht live getestet. In den Smoke-Tests (damals Hydrogen nach 3.5-flash-lite) griff der Fallback jeweils schon in Schritt 1. Die Interactions-Doku sagt nur, das Backend regle die Kompatibilität.
 - Abbruch nach `MAX_AGENT_STEPS` mit HTTP 500.
 - Antwortformat: `{"answer": str, "model": str, "steps": [{"tool", "args", "result"}]}`.
@@ -159,10 +160,17 @@ Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem H
 
 ## Neues Tool hinzufügen
 1. Funktion schreiben, die ein dict zurückgibt.
-2. In `TOOLS` eintragen (main.py:177).
-3. In `TOOL_DECLARATIONS` mit Beschreibung und JSON-Schema deklarieren (main.py:179).
-4. Optional den System-Prompt in `AGENT_CONFIG` ergänzen (main.py:206-214).
+2. In `TOOLS` eintragen (main.py).
+3. In `TOOL_DECLARATIONS` mit Beschreibung und JSON-Schema deklarieren (main.py).
+4. Optional den System-Prompt in `AGENT_CONFIG` ergänzen (main.py).
 5. Tests in `tests/test_tools.py` und einen Loop-Test mit `call_response` schreiben (tests/test_api.py).
+
+## Spiel-Agenten: Aufruf, Budget, Log
+- Aufruf aus dem Spiel: `await gemini.agenerate(contents, config.GEMINI_MODEL_POLICE, cfg, agent="police", attempts=config.AGENT_ATTEMPTS, timeout_ms=config.AGENT_DEADLINE_MS, use_fallback_model=False)`. Jede `HTTPException` (auch Budget) heißt: geskripteter Fallback, geloggt mit `genai_log.log_fallback(...)`.
+- Vorher `gemini.live_enabled()` prüfen. Bei `AGENTS_MODE=offline` (Default) gibt es keinen Request, nur den Fallback.
+- `timeout_ms` setzt `GenerateContentConfig.http_options`. Das SDK schickt den Wert auch als `X-Server-Timeout` (geprüft in `_api_client.py`, `_build_request`).
+- Budget (`gemini.BUDGET`, pro Prozess): `GENAI_MAX_CALLS_PER_MIN` (30) und `GENAI_MAX_CALLS_TOTAL` (400). Geprüft vor jedem Versuch. Ist es erschöpft, kommt HTTP 503 ohne Request. `GET /` zeigt den Zähler als `genai_calls`.
+- JSONL-Log: eine Zeile pro Versuch in `GENAI_LOG_PATH` (`logs/genai.jsonl`), Format `protocol.GenaiLogLine` (Design.md, "Vertrag"). `hub.py` schickt jede Zeile als `agent_log` an die Browser. Requests zählen: `(Get-Content logs\genai.jsonl).Count`.
 
 ## Kosten
 - Tier 3 ist bezahlt. Jeder Agent-Schritt ist ein Request, ein `/agent`-Aufruf kostet meist 2 bis 3 Requests.
@@ -173,14 +181,18 @@ Live geprüft am 2026-11-14 mit einem einzelnen Call: **funktioniert** mit dem H
 - `tests/conftest.py` setzt `PYTHON_DOTENV_DISABLED=1` vor `import main`. Tests laden die lokale `.env` also nie, weder den echten Key noch Overrides.
 - Autouse-Fixtures:
   - `block_live_gemini` blockiert `genai.Client` und entfernt `GEMINI_API_KEY`.
-  - `backoff_sleeps` ersetzt `main._sleep`, sodass Tests nicht warten. Die Fixture liefert die Liste der angefragten Wartezeiten.
+  - `backoff_sleeps` ersetzt `gemini._sleep`, sodass Tests nicht warten. Die Fixture liefert die Liste der angefragten Wartezeiten.
+  - `isolated_runtime`: GenAI-Log in eine eigene Temp-Datei pro Test, frisches Budget, `AGENTS_MODE=offline`, keine Log-Listener aus anderen Tests.
 - Die Fixture `fake_gemini([...])` liefert vorbereitete Antworten der Reihe nach. Exceptions in der Liste werden geworfen.
+- Weitere Fixtures: `genai_log_lines()` liest die im Test geschriebenen Logzeilen, `fresh_hub` setzt einen eigenen `hub.Hub` ein (ws.py und Lifespan nutzen ihn).
 - Builder in `tests/fakes.py`:
   - `text_response(text)`
   - `call_response((name, args), ...)` mit den IDs `call-0`, `call-1` usw.
   - `api_error(code, message)` erzeugt einen SDK-Fehler (`ServerError` bei 5xx, sonst `ClientError`).
+  - `audio_response(data, mime)` für TTS, `grounded_response(text, [(title, uri)])` für Maps Grounding.
   - `FakeClient.called_models` listet die Modell-ID jedes Aufrufs.
-- Retry-, Fallback-, 429- und Config-Tests: `tests/test_gemini_retry.py`.
+- Retry-, Fallback-, 429- und Config-Tests: `tests/test_gemini_retry.py`. Deadline, Budget, `use_fallback_model`: `tests/test_gemini.py`. Log: `tests/test_genai_log.py`.
+- Async-Tests mit `@pytest.mark.anyio` (Plugin kommt mit anyio, keine neue Abhängigkeit).
 - Live-Smoke-Test nur bewusst und einzeln, gegen den lokal gestarteten Server (PowerShell):
   ```powershell
   .venv\Scripts\uvicorn main:app --reload --port 3000          # eigenes Terminal

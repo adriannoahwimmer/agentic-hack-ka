@@ -1,8 +1,10 @@
-"""Hackathon-Starter: FastAPI + Gemini mit einfachem Tool-Calling-Agenten.
+"""FastAPI-App von Fächerstadt Agents: Healthcheck, Starter-Endpoints, Spiel und Feature-Loader.
 
-Zweck: Gemini-Client mit Retry/Fallback (generate), Beispiel-Tools und die
-Starter-Endpoints. Use-Cases: Healthcheck für Codesphere (GET /), Debuggen von
-Modell und Key (/chat), Tool-Loop ausprobieren (/agent).
+Zweck: setzt die App zusammen. Gemini-Zugriff liegt in gemini.py, der Event-/Action-Bus
+in hub.py, die WebSocket-Verbindung in ws.py. Feature-Module (Spielzustand, Agenten,
+TTS ...) werden über FEATURE_MODULES geladen; Feature-Scheiben ändern diese Datei nicht.
+Use-Cases: Healthcheck für Codesphere (GET /), Debuggen von Modell und Key (/chat),
+Tool-Loop ausprobieren (/agent), Spiel unter /play/ (Build aus frontend/ nach static/).
 
 Start lokal:  uvicorn main:app --reload --port 3000
 Modelle, Limits, Timeouts und Retries stehen in config.py. Der API-Key kommt
@@ -10,122 +12,106 @@ ausschließlich aus der Umgebungsvariable GEMINI_API_KEY (lokal aus der .env).
 """
 
 import ast
+import asyncio
+import importlib
 import logging
 import operator
 import os
-import random
-import time
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from functools import lru_cache
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from google import genai
-from google.genai import errors, types
+from fastapi.staticfiles import StaticFiles
+from google.genai import types
 
 import config
+import gemini
+import hub as hub_module
+import ws
 
 log = logging.getLogger(__name__)
-_sleep = time.sleep  # Tests ersetzen das, damit Backoff nicht wirklich wartet
 
-app = FastAPI(title="Hackathon Starter")
+# Feature-Module in Handler-Reihenfolge: erst Zustand, dann Agenten (Design.md, "Vertrag").
+# Jedes exportiert register(hub) und optional router, startup(), shutdown().
+# Fehlt ein Modul, wird es übersprungen.
+FEATURE_MODULES = (
+    "game_state",
+    "quests",
+    "runner",
+    "maps_facts",
+    "tts",
+    "agents.police",
+    "agents.gang",
+    "agents.quest",
+)
+STATIC_DIR = config.ROOT / "static"
 
 
 # --------------------------------------------------------------------------
-# Gemini-Client (lazy, damit der Healthcheck auch ohne API-Key antwortet)
+# Feature-Loader und Lebenszyklus
 # --------------------------------------------------------------------------
-@lru_cache(maxsize=1)
-def get_client() -> genai.Client:
-    """Gecachter Gemini-Client. Wirft, wenn GEMINI_API_KEY fehlt."""
-    # api_key explizit, damit ein evtl. gesetztes GOOGLE_API_KEY nicht gewinnt.
-    # SDK-Retries nur für Transportfehler (Timeout, Verbindungsabbruch) und 408.
-    # 5xx, Fallback-Modell und 429 behandelt generate() selbst.
-    return genai.Client(
-        api_key=os.environ.get("GEMINI_API_KEY"),
-        http_options=types.HttpOptions(
-            timeout=config.GEMINI_TIMEOUT_MS,
-            retry_options=types.HttpRetryOptions(
-                attempts=config.GEMINI_TRANSPORT_ATTEMPTS,
-                initial_delay=2.0,
-                max_delay=8.0,
-                http_status_codes=[408],
-            ),
-        ),
-    )
+def load_features(
+    app: FastAPI, hub: hub_module.Hub, names: tuple[str, ...] = FEATURE_MODULES
+) -> list[str]:
+    """Vorhandene Feature-Module laden: register(hub), Router einhängen, Hooks merken.
 
-
-def backoff_delay(attempt: int) -> float:
-    """Wartezeit nach dem Fehlversuch Nr. `attempt` (ab 0): exponentiell, mit Jitter."""
-    ceiling = min(
-        config.GEMINI_RETRY_MAX_DELAY, config.GEMINI_RETRY_BASE_DELAY * 2**attempt
-    )
-    return ceiling * random.uniform(0.5, 1.0)
-
-
-def generate(
-    contents, model: str, gen_config: types.GenerateContentConfig | None = None
-) -> tuple[types.GenerateContentResponse, str]:
-    """Ruft Gemini auf und gibt (Antwort, tatsächlich genutztes Modell) zurück.
-
-    - 500/502/503: bis zu GEMINI_RETRY_ATTEMPTS Versuche mit Backoff, danach
-      dasselbe mit GEMINI_MODEL_FALLBACK. Sind beide überlastet: HTTP 503.
-    - 504 (Deadline überschritten): ohne Retry direkt zum Fallback-Modell.
-    - 429: sofort HTTP 429 mit Spend-Cap-Hinweis. Kein Retry, kein Fallback.
-    - Andere Gemini-Fehler (400, 403, 404 ...): HTTP 502.
+    Fehlt ein Modul selbst, wird es übersprungen. Fehlt etwas, das ein Modul
+    importiert, bricht der Start ab (kein stilles Verschlucken von Bugs).
     """
+    hooks = app.state.feature_hooks
+    loaded = []
+    for name in names:
+        try:
+            module = importlib.import_module(name)
+        except ModuleNotFoundError as e:
+            if e.name == name or name.startswith(f"{e.name}."):
+                log.info("Feature %s nicht vorhanden, übersprungen", name)
+                continue
+            raise
+        if hasattr(module, "register"):
+            module.register(hub)
+        if getattr(module, "router", None) is not None:
+            app.include_router(module.router)
+        for kind in ("startup", "shutdown"):
+            if callable(getattr(module, kind, None)):
+                hooks[kind].append(getattr(module, kind))
+        loaded.append(name)
+    log.info("Features geladen: %s", ", ".join(loaded) or "keine")
+    return loaded
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Hub an den Event-Loop binden, Feature-Hooks starten und beim Ende stoppen."""
+    hub = hub_module.HUB
+    hub.start(asyncio.get_running_loop())
+    for hook in app.state.feature_hooks["startup"]:
+        await hook()
     try:
-        client = get_client()
-    except Exception as e:  # noqa: BLE001 - jede Client-Init-Panne -> 500 statt Crash
-        raise HTTPException(
-            500, f"Gemini-Client nicht verfügbar (GEMINI_API_KEY gesetzt?): {e}"
-        )
+        yield
+    finally:
+        for hook in reversed(app.state.feature_hooks["shutdown"]):
+            await hook()
+        hub.stop()
 
-    models = [model]
-    if config.GEMINI_MODEL_FALLBACK != model:
-        models.append(config.GEMINI_MODEL_FALLBACK)
 
-    last_error: errors.APIError | None = None
-    for current in models:
-        if current != model:
-            log.warning("Gemini: %s überlastet, weiche auf %s aus", model, current)
-        for attempt in range(config.GEMINI_RETRY_ATTEMPTS):
-            if attempt:
-                _sleep(backoff_delay(attempt - 1))
-            try:
-                response = client.models.generate_content(
-                    model=current, contents=contents, config=gen_config
-                )
-                return response, current
-            except errors.APIError as e:
-                if e.code == 429:
-                    raise HTTPException(
-                        429,
-                        f"Gemini 429 bei {current}: {config.SPEND_CAP_HINT} ({e.message})",
-                    ) from e
-                if e.code not in config.RETRYABLE_STATUS:
-                    raise HTTPException(
-                        502, f"Gemini-Fehler {e.code} bei {current}: {e.message}"
-                    ) from e
-                last_error = e
-                log.warning(
-                    "Gemini %s bei %s (Versuch %d/%d): %s",
-                    e.code,
-                    current,
-                    attempt + 1,
-                    config.GEMINI_RETRY_ATTEMPTS,
-                    e.message,
-                )
-                if e.code in config.FALLBACK_IMMEDIATELY_STATUS:
-                    break  # gleiche Deadline am gleichen Modell hilft nicht
+def mount_static(app: FastAPI, directory: Path = STATIC_DIR) -> bool:
+    """Spiel-Build unter /play/ ausliefern, falls vorhanden. GET / bleibt der Healthcheck."""
+    if not (directory / "index.html").is_file():
+        log.info("Kein Spiel-Build in %s (npm --prefix frontend run build)", directory)
+        return False
+    app.mount("/play", StaticFiles(directory=directory, html=True), name="play")
+    return True
 
-    raise HTTPException(
-        503,
-        f"Gemini überlastet ({' -> '.join(models)}), "
-        f"zuletzt {last_error.code}: {last_error.message}",
-    )
+
+app = FastAPI(title="Fächerstadt Agents", lifespan=lifespan)
+app.state.feature_hooks = {"startup": [], "shutdown": []}
+app.include_router(ws.router)
 
 
 # --------------------------------------------------------------------------
-# Tools für den Agenten
+# Tools für den Starter-Agenten (/agent)
 # --------------------------------------------------------------------------
 def get_time() -> dict:
     """Aktuelle Zeit in UTC und Serverzeit."""
@@ -149,6 +135,7 @@ _OPS = {
 
 
 def _eval(node):
+    """Arithmetischen AST-Knoten auswerten (nur Zahlen und Grundrechenarten)."""
     if isinstance(node, ast.Constant) and type(node.value) in (int, float):
         return node.value
     if isinstance(node, ast.BinOp) and type(node.op) in _OPS:
@@ -215,6 +202,7 @@ AGENT_CONFIG = types.GenerateContentConfig(
 
 
 def run_tool(name: str, args: dict) -> dict:
+    """Tool aus TOOLS ausführen. Fehler gehen als {"error": ...} ans Modell zurück."""
     fn = TOOLS.get(name)
     if fn is None:
         return {"error": f"Unbekanntes Tool: {name}"}
@@ -238,13 +226,17 @@ def health():
             "fallback": config.GEMINI_MODEL_FALLBACK,
         },
         "gemini_key_configured": bool(os.environ.get("GEMINI_API_KEY")),
+        "agents_mode": config.AGENTS_MODE,
+        "genai_calls": gemini.BUDGET.total,
     }
 
 
 @app.get("/chat")
 def chat(q: str):
-    """Einzelne Frage an das Chat-Modell (NPC-Dialoge), ohne Tools."""
-    response, model = generate(q, config.GEMINI_MODEL_CHAT, CHAT_CONFIG)
+    """Einzelne Frage an das Chat-Modell, ohne Tools."""
+    response, model = gemini.generate(
+        q, config.GEMINI_MODEL_CHAT, CHAT_CONFIG, agent="chat"
+    )
     return {"answer": response.text, "model": model}
 
 
@@ -260,7 +252,9 @@ def agent(q: str):
     for _ in range(config.MAX_AGENT_STEPS):
         # Nach einem Fallback bleibt der Loop beim Fallback-Modell, damit nicht
         # zwei Modelle abwechselnd die Thought-Signatures des anderen bekommen.
-        response, model = generate(contents, model, AGENT_CONFIG)
+        response, model = gemini.generate(
+            contents, model, AGENT_CONFIG, agent="starter"
+        )
         calls = response.function_calls
         if not calls:
             return {"answer": response.text, "model": model, "steps": steps}
@@ -286,3 +280,8 @@ def agent(q: str):
         500,
         f"Agent hat das Limit von {config.MAX_AGENT_STEPS} Schritten erreicht: {steps}",
     )
+
+
+# Features zuletzt laden (sie dürfen main nicht importieren), Spiel-Build als letzter Mount.
+load_features(app, hub_module.HUB)
+mount_static(app)

@@ -18,6 +18,8 @@ def test_health_without_key():
             "fallback": config.GEMINI_MODEL_FALLBACK,
         },
         "gemini_key_configured": False,
+        "agents_mode": "offline",
+        "genai_calls": 0,
     }
 
 

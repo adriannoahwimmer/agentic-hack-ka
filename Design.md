@@ -177,12 +177,13 @@ Vorlage für einen neuen Abschnitt:
 - Use-Cases: Nachrichten validieren, Koordinaten projizieren, POIs laden, Features registrieren.
 - Dateien:
   - 0a: `protocol.py`, `geo.py`, `data/pois.json`, `contract/examples/`, Frontend-Skelett (`frontend/package.json`, `vite.config.js`, `index.html`, `src/main.js`, `src/net.js`, `src/types.js`, Platzhalter `src/core/index.js`), Tests `tests/test_protocol.py`, `tests/test_geo.py`
-  - 0b: `gemini.py`, `genai_log.py`, `hub.py`, `ws.py`, Loader in `main.py`
-- Schnittstellen: siehe "Vertrag".
+  - 0b: `gemini.py` (generate/agenerate, Budget, Deadline, Fallback-Modell abschaltbar), `genai_log.py` (JSONL + Listener), `hub.py` (Bus, `HUB`), `ws.py` (`/ws`, `/debug/action`), `agents/__init__.py`, in `main.py`: `FEATURE_MODULES`, `load_features`, `lifespan`, `mount_static` (`/play/`). Tests `tests/test_gemini.py`, `test_genai_log.py`, `test_hub.py`, `test_ws.py`, `test_main_loader.py`, `test_scripts_ascii.py`
+- Schnittstellen: siehe "Vertrag". Zusätzlich zeigt `GET /` jetzt `agents_mode` und `genai_calls` (Budget-Zähler).
+- Ablauf einer Agenten-Aktion: Feature ruft `await HUB.send_action(type, payload)` → `protocol.make_action` validiert → `on_action`-Beobachter → alle WebSocket-Clients. Aus Threads: `HUB.send_action_threadsafe(...)`. Jeder GenAI-Call landet über `genai_log` → `HUB` als `agent_log` im Browser.
 - Agent und Modell: Schlüssel im Block "Kern" und "Modelle je Agent" in `config.py`.
 - Offene Punkte:
-  - 0b (Kern) folgt nach Freigabe des Vertrags.
   - Overpass: von dieser Maschine nur der Mirror `maps.mail.ru` erreichbar (overpass-api.de und kumi.systems: keine Verbindung, 2026-11-14).
+  - `static/` ist bis Phase 4 gitignored. Ohne Build zeigt `/play/` 404; der Loader loggt das.
 
 ### Frontend-Kern (Scheibe Welt)
 _noch leer_
@@ -221,11 +222,12 @@ _noch leer_
   - sehen, ob der Fallback gegriffen hat (Feld `model`)
   - neue Tools im Loop ausprobieren
 - Dateien:
-  - `main.py`: `generate`, `chat`, `agent`, Beispiel-Tools `get_time` und `calculator`
+  - `main.py`: `chat`, `agent`, Beispiel-Tools `get_time` und `calculator`
+  - `gemini.py`: `generate` (Retry, Fallback, Budget, JSONL-Log)
   - `config.py`
   - Tests: `tests/test_api.py`, `tests/test_gemini_retry.py`
 - Schnittstellen (HTTP, keine WebSocket-Nachrichten):
-  - `GET /`: `{status, models: {agent, chat, fallback}, gemini_key_configured}`. Ruft Gemini nie auf.
+  - `GET /`: `{status, models: {agent, chat, fallback}, gemini_key_configured, agents_mode, genai_calls}`. Ruft Gemini nie auf.
   - `GET /chat?q=...`: `{answer, model}`
   - `GET /agent?q=...`: `{answer, model, steps: [{tool, args, result}]}`
   - Fehler:
@@ -250,4 +252,3 @@ _noch leer_
   - `gemini-3.1-flash-lite` lieferte in der Messung 2 von 6 Mal 503. Als Fallback reicht das, als Primärmodell nicht.
   - Mit Polizei-Function-Call braucht `gemini-3.1-flash-lite` 5 bis 12,5 s (1 von 5 Calls: 504). Spiel-Agenten nutzen es deshalb nicht, sondern den geskripteten Fallback.
   - Die Decisions API (`gemini-decision-1`) funktioniert mit dem Key. Für geschlossene Agent-Entscheidungen ist sie ein Kandidat, eingebaut ist sie noch nicht (`agent_docs/gemini_api.md`).
-  - GenAI-Calls werden noch nicht als JSON Lines geloggt (Querschnittsregel, Quelle für das Agent-Log-Overlay).

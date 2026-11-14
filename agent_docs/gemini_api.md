@@ -36,6 +36,12 @@ Modelle und SDK-Fragen zuerst im Skill `gemini-api-dev` nachschlagen (`.claude/s
 - `gemini-decision-1` ist **nicht** gelistet (die Liste kommt von v1), über v1beta aber aufrufbar (siehe "Decisions API").
 - Neu prüfen: `client.models.list()` und dabei `m.name` sowie `m.supported_actions` ausgeben. Das kostet kein Generierungs-Kontingent.
 
+## Maps Grounding: auf diesem Projekt gesperrt (429)
+- **Maps Grounding (`tools=[Tool(google_maps=GoogleMaps())]`) liefert auf diesem Projekt 429** "You exceeded your current quota" (Quest-Live-Check Q0, 2026-11-14 ca. 15:18, `gemini-3.5-flash-lite`). Gesperrt ist das Tool, nicht das Modell und nicht das Spend-Cap.
+- Gegentest 2026-11-14 14:48:59 UTC: genau 1 Request ohne Tools an `gemini-3.5-flash-lite` (`attempts=1`, ohne Fallback-Modell, `GEMINI_TRANSPORT_ATTEMPTS=1`, Prompt "Antworte nur mit dem Wort: ok"): **200, Antwort "ok", 1,5 s.** Polizei und Quest-NPC laufen live also normal.
+- Folge: Maps Grounding nicht aufrufen. Die Kürzung "Maps Grounding" ist gezogen: `lookup_place` nutzt die POI-Beschreibung aus `data/pois.json`, es gibt keine Quellenzeile im Dialog. Ein 429 bei einem Call **mit** `google_maps` sagt nichts über das Spend-Cap.
+- Die Regel "429 nie wiederholen" bleibt. Ein 429 bei einem Call **ohne** Built-in-Tools heißt weiterhin: Spend-Cap prüfen (aistudio.google.com/spend).
+
 ## Latenz der Textmodelle (2026-11-14, ca. 11:45 Uhr)
 Je Modell 3 Calls über `generate()` (damals main.py, heute gemini.py) mit `thinking_level=low` und Timeout 30 s, ohne Retry und ohne Fallback. Die Modelle liefen abwechselnd.
 - **kurz**: "Antworte nur mit dem Wort: ok", ohne Tools.

@@ -12,8 +12,8 @@ const CSS = `
 #hud [hidden] { display: none !important; }
 #hud { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; color: #f4f6f8; text-shadow: 0 1px 2px #000a; }
 #hud .h-stars { position: fixed; top: 14px; right: 18px; font-size: 30px; letter-spacing: 2px; }
-#hud .h-stars span { color: #ffffff30; transition: color .2s, transform .2s; display: inline-block; }
-#hud .h-stars span.on { color: #ffd23f; }
+#hud .h-stars span { color: #00000059; -webkit-text-stroke: 1px #ffffffaa; transition: color .2s, transform .2s; display: inline-block; }
+#hud .h-stars span.on { color: #ffd23f; -webkit-text-stroke: 1px #7a5a00; }
 #hud .h-stars.flash span.on { transform: scale(1.3); }
 #hud .h-net { position: fixed; top: 22px; left: 16px; width: 10px; height: 10px; border-radius: 50%; background: #e63946; box-shadow: 0 0 6px #000; }
 #hud .h-net.ok { background: #2ecc71; }
@@ -84,7 +84,7 @@ export function createHud(root, opts = {}) {
   dialog.hidden = true;
   const cross = el(root, 'h-cross');
   const weapon = el(root, 'h-weapon', 'Pistol');
-  el(root, 'h-help', 'WASD move · Shift sprint · Mouse aim · LMB shoot · 1 pistol / 2 SMG · F enter/exit car · Esc release mouse');
+  el(root, 'h-help', 'WASD move · Shift sprint · Mouse aim · LMB shoot · 1 pistol / 2 SMG · F enter/exit car · Space handbrake · R flip car · P post-FX · Q quality · M map · Esc release mouse');
   const panels = el(root, 'h-panels');
   const start = el(root, 'h-start');
   start.innerHTML = '<div>Click to play</div><small>Karlsruhe, around the Palace · real OpenStreetMap data</small>';

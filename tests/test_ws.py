@@ -81,7 +81,8 @@ def test_state_is_sent_on_connect(app_client, fresh_hub):
     assert fresh_hub.client_count == 0  # nach dem Trennen entfernt
 
 
-def test_debug_action_is_404_without_flag(app_client):
+def test_debug_action_is_404_without_flag(app_client, monkeypatch):
+    monkeypatch.setattr(config, "DEBUG_ENDPOINTS", False)  # unabhängig von Env/.env
     r = app_client.post("/debug/action", json=_example("spawn_units"))
     assert r.status_code == 404
 

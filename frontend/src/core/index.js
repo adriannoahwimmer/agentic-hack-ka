@@ -26,6 +26,8 @@ import { createRenderer } from './renderer.js';
 import { createWorld } from './world.js';
 
 const SPAWN_POI = 'schlossplatz';
+/** Blickrichtung beim Start: 0 = Norden (zum Schloss). */
+const SPAWN_HEADING = 0;
 /** Debug/Intro: `?view=top` zeigt die Stadt von oben (Kamera fest über dem Schloss). */
 const overview = new URLSearchParams(location.search).get('view') === 'top';
 
@@ -56,12 +58,17 @@ export async function createCore({ net }) {
   const city = buildCity({ scene, RAPIER, world: physicsWorld, data, pois: worldApi.pois });
   addLandmarks({ scene, data }); // Einhängepunkt Landmarks (frontend/src/landmarks/)
   worldApi.bounds = city.bounds;
+  // Für Landmark-Modelle (frontend/src/landmarks/): OSM-Gebäude an ihrer Stelle ausblenden, Collider bleibt.
+  worldApi.hideBuilding = city.hideBuilding;
+  worldApi.showBuilding = city.showBuilding;
+  worldApi.hideBuildingsAt = city.hideBuildingsAt;
 
   const input = createInput(renderer.domElement);
   const spawnPoi = worldApi.poi(SPAWN_POI) ?? { x: 0, z: 150 };
   const player = createPlayer({
     THREE, scene, camera, RAPIER, world: physicsWorld, fixed: physics.fixed, input, models,
-    spawn: { x: spawnPoi.x, z: spawnPoi.z + 20 },
+    // Schlossplatz, auf dem Mittelweg zwischen den Rasenflächen, Blick nach Norden aufs Schloss.
+    spawn: { x: spawnPoi.x, z: spawnPoi.z + 20, heading: SPAWN_HEADING },
   });
   const combat = createCombat({ THREE, scene, camera, RAPIER, world: physicsWorld, input, hud, net, player, worldApi });
   const pedestrians = createPedestrians({ scene, models, worldApi, combat, player });

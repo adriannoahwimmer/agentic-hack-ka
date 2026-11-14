@@ -37,7 +37,7 @@ export function turnTowards(a, b, maxStep) {
 
 /**
  * Spieler anlegen.
- * @param {{THREE: object, scene: object, camera: object, RAPIER: object, world: object, fixed: Function, input: object, models: object, spawn: {x: number, z: number}}} deps
+ * @param {{THREE: object, scene: object, camera: object, RAPIER: object, world: object, fixed: Function, input: object, models: object, spawn: {x: number, z: number, heading?: number}}} deps
  */
 export function createPlayer({ THREE, scene, camera, RAPIER, world, fixed, input, models, spawn }) {
   const object3d = models.person({ color: 0x1d3557 });
@@ -60,8 +60,8 @@ export function createPlayer({ THREE, scene, camera, RAPIER, world, fixed, input
 
   const pos = { x: spawn.x, y: CENTER_Y + HOVER, z: spawn.z };
   const vel = { x: 0, z: 0 };
-  let heading = 0;
-  let yaw = 0; // Kamerarichtung, gleiche Konvention wie heading
+  let heading = spawn.heading ?? 0;
+  let yaw = heading; // Kamerarichtung, gleiche Konvention wie heading
   let pitch = 0.25; // > 0: Kamera oberhalb, blickt nach unten
   let speed = 0;
   let aiming = false;

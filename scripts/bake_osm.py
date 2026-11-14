@@ -12,10 +12,12 @@ Use-Cases:
   ein erneuter Lauf erzeugt byte-gleiche Dateien.
 
 Ausgabeformate (Design.md, "OSM-Stadt"):
-- buildings.json: `[{id, h, pts: [[x, z], ...]}]`, Ring offen (letzter != erster Punkt),
+- buildings.json: `[{id, h, pts: [[x, z], ...], holes?}]`, Ring offen (letzter != erster Punkt),
   im Uhrzeigersinn von oben (Karte mit Norden oben), d. h. Shoelace in (x, z) > 0.
 - roads.json: `[{id, kind, w, pts}]`, Polylinie, `w` = Breite in Metern.
-- areas.json: `[{id, kind, pts}]`, `kind` aus park, garden, grass, parking, plaza.
+- areas.json: `[{id, kind, pts, holes?}]`, `kind` aus park, garden, grass, parking, plaza.
+- `holes` (nur bei Multipolygon-Relationen mit Innenringen, z. B. Innenhöfe): Liste offener
+  Ringe gegen den Uhrzeigersinn (Shoelace < 0).
 
 Nur Standardbibliothek. Daten: © OpenStreetMap contributors (ODbL).
 """
@@ -195,8 +197,13 @@ def signed_area(ring: list[list[float]]) -> float:
     return s / 2.0
 
 
-def clean_ring(points: list[tuple[float, float]]) -> list[list[float]] | None:
-    """Ring vereinfachen, runden, offen und im Uhrzeigersinn. None, wenn degeneriert."""
+def clean_ring(
+    points: list[tuple[float, float]], clockwise: bool = True
+) -> list[list[float]] | None:
+    """Ring vereinfachen, runden, offen; Außenring im, Loch gegen den Uhrzeigersinn.
+
+    None, wenn degeneriert (weniger als 3 Punkte oder kleiner als 1 m²).
+    """
     if len(points) < 3:
         return None
     if points[0] != points[-1]:
@@ -209,7 +216,7 @@ def clean_ring(points: list[tuple[float, float]]) -> list[list[float]] | None:
     area = signed_area(ring)
     if abs(area) < 1.0:  # kleiner als 1 m²
         return None
-    if area < 0:
+    if (area < 0) == clockwise:
         ring.reverse()
     return ring
 
@@ -248,17 +255,69 @@ def stitch_rings(ways: list[list[dict]]) -> list[list[dict]]:
 
 def outer_rings(element: dict) -> list[list[dict]]:
     """Geschlossene Außenringe (lat/lon) eines Wegs oder einer Multipolygon-Relation."""
+    return [outer for outer, _ in polygons(element)]
+
+
+def _contains(ring: list[dict], pt: dict) -> bool:
+    """Punkt-in-Polygon (Strahlverfahren) in lat/lon, ausreichend für kleine Flächen."""
+    inside = False
+    x, y = pt["lon"], pt["lat"]
+    for a, b in zip(ring, ring[1:] + ring[:1]):
+        if (a["lat"] > y) != (b["lat"] > y):
+            xc = a["lon"] + (y - a["lat"]) * (b["lon"] - a["lon"]) / (
+                b["lat"] - a["lat"]
+            )
+            if x < xc:
+                inside = not inside
+    return inside
+
+
+def polygons(element: dict) -> list[tuple[list[dict], list[list[dict]]]]:
+    """Polygone (Außenring, [Innenringe]) in lat/lon.
+
+    Wege haben keine Innenringe. Bei Multipolygon-Relationen werden äußere und innere Wege
+    zu Ringen zusammengesetzt; jeder Innenring (Innenhof) gehört zu dem Außenring, der seinen
+    ersten Punkt enthält. Innenringe ohne passenden Außenring entfallen.
+    """
     if element["type"] == "way":
         geom = element.get("geometry") or []
         if len(geom) >= 4 and geom[0] == geom[-1]:
-            return [geom]
+            return [(geom, [])]
         return []
-    outers = [
-        m.get("geometry") or []
-        for m in element.get("members", [])
-        if m.get("type") == "way" and m.get("role", "outer") in ("outer", "")
-    ]
-    return stitch_rings(outers)
+    members = [m for m in element.get("members", []) if m.get("type") == "way"]
+    outers = stitch_rings(
+        [
+            m.get("geometry") or []
+            for m in members
+            if m.get("role", "outer") in ("outer", "")
+        ]
+    )
+    inners = stitch_rings(
+        [m.get("geometry") or [] for m in members if m.get("role") == "inner"]
+    )
+    result: list[tuple[list[dict], list[list[dict]]]] = [(o, []) for o in outers]
+    for inner in inners:
+        for outer, holes in result:
+            if _contains(outer, inner[0]):
+                holes.append(inner)
+                break
+    return result
+
+
+def baked_polygons(
+    element: dict,
+) -> list[tuple[list[list[float]], list[list[list[float]]]]]:
+    """Polygone in Weltkoordinaten: (Außenring im Uhrzeigersinn, [Löcher dagegen])."""
+    out = []
+    for outer, inners in polygons(element):
+        ring = clean_ring(project(outer))
+        if not ring:
+            continue
+        holes = [
+            h for h in (clean_ring(project(g), clockwise=False) for g in inners) if h
+        ]
+        out.append((ring, holes))
+    return out
 
 
 # --- Regeln -------------------------------------------------------------------
@@ -340,19 +399,24 @@ def bake(raw: dict) -> dict[str, list]:
 
         if "building" in tags and tags["building"] != "no":
             h = building_height(tags)
-            rings = [r for r in (clean_ring(project(g)) for g in outer_rings(el)) if r]
-            for i, ring in enumerate(rings):
-                bid = eid if i == 0 else f"{eid}#{i}"
-                buildings.append({"id": bid, "h": h, "pts": ring})
+            for i, (ring, holes) in enumerate(baked_polygons(el)):
+                item = {"id": eid if i == 0 else f"{eid}#{i}", "h": h, "pts": ring}
+                if holes:
+                    item["holes"] = holes
+                buildings.append(item)
             continue
 
         kind = area_kind(tags)
         if kind:
-            rings = [r for r in (clean_ring(project(g)) for g in outer_rings(el)) if r]
-            for i, ring in enumerate(rings):
-                areas.append(
-                    {"id": eid if i == 0 else f"{eid}#{i}", "kind": kind, "pts": ring}
-                )
+            for i, (ring, holes) in enumerate(baked_polygons(el)):
+                item = {
+                    "id": eid if i == 0 else f"{eid}#{i}",
+                    "kind": kind,
+                    "pts": ring,
+                }
+                if holes:
+                    item["holes"] = holes
+                areas.append(item)
             continue
 
         hw = tags.get("highway")

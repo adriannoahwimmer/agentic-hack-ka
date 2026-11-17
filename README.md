@@ -1,10 +1,34 @@
-# Grand Theft Fächer (Fächerstadt Agents)
+<div align="center">
 
-Video: [demo video (Google Photos album)](https://photos.app.goo.gl/Yyjkj5WYqiEQ7gaX6)
+# Grand Theft Fächer
+### Fächerstadt Agents: Karlsruhe as an open world where every decision comes from a Gemini agent
+
+![Gemini](https://img.shields.io/badge/Google_Gemini-function_calling-4285F4?logo=googlegemini&logoColor=white)
+![Three.js](https://img.shields.io/badge/Three.js-Rapier_physics-000000?logo=threedotjs&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-WebSocket-009688?logo=fastapi&logoColor=white)
+![OpenStreetMap](https://img.shields.io/badge/OpenStreetMap-real_Karlsruhe-7EBC6F?logo=openstreetmap&logoColor=white)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow)
+
+**Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe, 14 November 2026, co-hosted by Google DeepMind and Codesphere.**
+
+<!-- VIDEO -->
+
+<table>
+<tr>
+<td align="center" width="50%"><a href="docs/media/demo-quest-chase.mp4"><img src="docs/media/demo-quest-chase.gif" width="300" alt="Quest and police chase"></a></td>
+<td align="center" width="50%"><a href="docs/media/demo-police-tank.mp4"><img src="docs/media/demo-police-tank.gif" width="300" alt="Police tank at 5 stars"></a></td>
+</tr>
+<tr>
+<td align="center"><b>Quest and police chase</b><br>The quest giver sends you to Kronenplatz, the dispatcher answers with a German radio call.</td>
+<td align="center"><b>5 stars: the tank joins</b><br>Officers on foot, police cars and a tank; the overlay logs every agent decision.</td>
+</tr>
+</table>
+
+<sub>Click a preview for the full clip with sound · <a href="https://photos.app.goo.gl/Yyjkj5WYqiEQ7gaX6">hackathon submission video</a></sub>
+
+</div>
 
 A browser open world around Karlsruhe Palace, built from real OpenStreetMap data: walk, drive, shoot, and get chased by the police. The twist: nothing is scripted. A Gemini police dispatcher and a Gemini quest giver make the decisions through function calling. The game never waits for them, because deterministic rules and scripted fallbacks keep it running when the model is slow or offline.
-
-Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe (2026-11-14).
 
 ## Demo path
 1. Walk up to **Karl the Fixer** on Palace Square and press **E**. The quest agent picks a real place from the map and gives you a mission against a rival gang or smuggling crew. The enemies are never real people, officials or institutions, and courts and authorities (e.g. the Federal Constitutional Court) are blocked as quest targets on the server.
@@ -176,6 +200,7 @@ Units per level (at most 6, enforced in the prompt and as a server-side clamp; t
 - `scripts/`: OSM bake, checks, worktree setup
 - `Design.md`: architecture, contract and features
 - `docs/plans/`: implementation plan
+- `docs/media/`: demo clips (MP4) and GIF previews
 - `agent_docs/`: notes on the Gemini API and the deployment
 - `TEAM.md`, `CLAUDE.md`: team workflow and rules for Claude Code
 
@@ -190,4 +215,6 @@ How we worked (details in `TEAM.md`):
 - Schedule: deadline 19:00, bug fixes only from 18:00.
 
 ## Licenses and attribution
+The code is released under the [MIT License](LICENSE): you may use, change and redistribute it, as long as the copyright notice stays in.
+
 Map data © OpenStreetMap contributors (ODbL). The HDRI by Poly Haven is CC0.

@@ -1,5 +1,5 @@
 # setup-worktree.ps1 - legt einen Feature-Worktree fuer Faecherstadt Agents an.
-# Aufruf im Hauptordner (C:\Users\Wimme\agentic-hack-ka):
+# Aufruf im Hauptordner des Repos (z. B. C:\code\agentic-hack-ka):
 #   .\scripts\setup-worktree.ps1 polizei  3001 5174
 #   .\scripts\setup-worktree.ps1 quest    3002 5175
 #   .\scripts\setup-worktree.ps1 welt     3003 5173   (Welt nutzt Vite 5173; 3000 bleibt fuer main frei)

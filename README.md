@@ -4,7 +4,9 @@ Video: [demo video (Google Photos album)](https://photos.app.goo.gl/Yyjkj5WYqiEQ
 
 A browser open world around Karlsruhe Palace, built from real OpenStreetMap data: walk, drive, shoot, and get chased by the police. The twist: nothing is scripted. A Gemini police dispatcher and a Gemini quest giver make the decisions through function calling. The game never waits for them, because deterministic rules and scripted fallbacks keep it running when the model is slow or offline.
 
-Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe (2026-11-14).
+Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe on 14 November 2026, co-hosted by Google DeepMind and Codesphere.
+
+<!-- Videos: drag the MP4s into the GitHub README editor and paste the generated URLs here, one per line. -->
 
 ## Demo path
 1. Walk up to **Karl the Fixer** on Palace Square and press **E**. The quest agent picks a real place from the map and gives you a mission against a rival gang or smuggling crew. The enemies are never real people, officials or institutions, and courts and authorities (e.g. the Federal Constitutional Court) are blocked as quest targets on the server.
@@ -190,4 +192,6 @@ How we worked (details in `TEAM.md`):
 - Schedule: deadline 19:00, bug fixes only from 18:00.
 
 ## Licenses and attribution
+The code is released under the [MIT License](LICENSE): you may use, change and redistribute it, as long as the copyright notice stays in.
+
 Map data © OpenStreetMap contributors (ODbL). The HDRI by Poly Haven is CC0.

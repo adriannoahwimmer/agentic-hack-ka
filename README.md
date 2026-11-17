@@ -11,7 +11,7 @@
 
 **Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe, 14 November 2026, co-hosted by Google DeepMind and Codesphere.**
 
-<!-- VIDEO -->
+https://github.com/user-attachments/assets/2be21f5d-2a05-44b4-a1a2-76107643a85d
 
 <table>
 <tr>

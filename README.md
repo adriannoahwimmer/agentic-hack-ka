@@ -6,7 +6,10 @@ A browser open world around Karlsruhe Palace, built from real OpenStreetMap data
 
 Built in one day at the {Tech: Europe} Agentic AI Hack Karlsruhe on 14 November 2026, co-hosted by Google DeepMind and Codesphere.
 
-<!-- Videos: drag the MP4s into the GitHub README editor and paste the generated URLs here, one per line. -->
+| Quest and police chase | Wanted level 5: the tank joins |
+|---|---|
+| [![Quest and police chase](docs/media/demo-quest-chase.gif)](docs/media/demo-quest-chase.mp4) | [![Police tank at 5 stars](docs/media/demo-police-tank.gif)](docs/media/demo-police-tank.mp4) |
+| Steal a car, get a quest from the Gemini quest giver, and the dispatcher sends units with a German radio call. [Full clip with sound](docs/media/demo-quest-chase.mp4) | Officers on foot, police cars and the tank chase the player; the agent overlay on the right logs every decision. [Full clip with sound](docs/media/demo-police-tank.mp4) |
 
 ## Demo path
 1. Walk up to **Karl the Fixer** on Palace Square and press **E**. The quest agent picks a real place from the map and gives you a mission against a rival gang or smuggling crew. The enemies are never real people, officials or institutions, and courts and authorities (e.g. the Federal Constitutional Court) are blocked as quest targets on the server.
@@ -178,6 +181,7 @@ Units per level (at most 6, enforced in the prompt and as a server-side clamp; t
 - `scripts/`: OSM bake, checks, worktree setup
 - `Design.md`: architecture, contract and features
 - `docs/plans/`: implementation plan
+- `docs/media/`: demo clips (MP4) and GIF previews
 - `agent_docs/`: notes on the Gemini API and the deployment
 - `TEAM.md`, `CLAUDE.md`: team workflow and rules for Claude Code
 

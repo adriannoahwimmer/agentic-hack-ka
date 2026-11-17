@@ -2,8 +2,8 @@
 
 ## Setup
 ```powershell
-git clone https://github.com/adriannoahwimmer/agentic-hack-ka.git
-cd agentic-hack-ka
+git clone https://github.com/adriannoahwimmer/gta-karlsruhe.git
+cd gta-karlsruhe
 python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt   # = requirements.txt + ruff/pytest für den Check
 copy .env.example .env                              # danach eigenen GEMINI_API_KEY eintragen

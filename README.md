@@ -1,6 +1,6 @@
 <div align="center">
 
-# Grand Theft Fächer
+# GTA Karlsruhe
 ### Fächerstadt Agents: Karlsruhe as an open world where every decision comes from a Gemini agent
 
 ![Gemini](https://img.shields.io/badge/Google_Gemini-function_calling-4285F4?logo=googlegemini&logoColor=white)
@@ -76,8 +76,8 @@ Example: `http://localhost:3000/play/?q=medium&start=0`
 Requirements: Python 3.10+, Node.js with npm (developed with Node 24), and a Gemini API key.
 
 ```powershell
-git clone https://github.com/adriannoahwimmer/agentic-hack-ka.git
-cd agentic-hack-ka
+git clone https://github.com/adriannoahwimmer/gta-karlsruhe.git
+cd gta-karlsruhe
 python -m venv .venv
 .venv\Scripts\pip install -r requirements-dev.txt   # runtime only: requirements.txt
 copy .env.example .env                              # then set GEMINI_API_KEY
